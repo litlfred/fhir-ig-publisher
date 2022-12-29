@@ -807,7 +807,7 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
   private String nestedIgOutput;
   private boolean genExamples;
   private boolean doTransforms;
-  private boolean doUMLs;
+  private boolean noUML;
   private boolean allInvariants = true;
   private List<String> spreadsheets = new ArrayList<>();
   private List<String> bundles = new ArrayList<>();
@@ -2692,7 +2692,6 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
 	forceDir(fmlDir); 
 	resourceDirs.add(fmlDir);
     }
-
     if (pagesDirs.isEmpty())
       pagesDirs.add(Utilities.path(rootDir, "pages"));
     if (mode == IGBuildMode.WEBSERVER) 
@@ -2702,6 +2701,14 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
        vsCache = Utilities.path(System.getProperty("java.io.tmpdir"), "fhircache");
      else
        vsCache = Utilities.path(System.getProperty("user.home"), "fhircache");
+    }
+    if (!noUML) {
+	umlDir = Utilities.path(rootDir, "uml-generated");
+	log("Creating uml output directory: " + umlDir);
+	forceDir(umlDir);
+	//File d = Utilities.createDirectory(umlDir);
+	//log("Created:" + d);
+	pagesDirs.add(umlDir);
     }
     
     logDebugMessage(LogCategory.INIT, "Check folders");
@@ -2720,12 +2727,6 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
         missingDirs.add(s);
     }
     fmlDirs.removeAll(missingDirs);
-
-    if (doUMLs) {
-	umlDir = Utilities.path(tempDir,"_uml");
-	forceDir(umlDir);
-	pagesDirs.add(umlDir);
-    }
     
     missingDirs.clear();
     for (String s : pagesDirs) {
@@ -2900,8 +2901,8 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
     if (!noFML) {
       otherFilesStartup.add(fmlDir);
     }
-    doUMLs = template.getDoUMLs();
-    if (doUMLs) {
+    if (!noUML) {
+      log("Adding to startup files: " + umlDir);
       otherFilesStartup.add(umlDir);
     }
 
@@ -4058,10 +4059,16 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
 
   private void forceDir(String dir) throws Exception {
     File f = new File(dir);
+    log("fd: checking " +f);
     if (!f.exists())
+    {
+	log("fd: does not exist");
       Utilities.createDirectory(dir);
-    else if (!f.isDirectory())
+    }
+    else if (!f.isDirectory()) {
+	log("fd: is not directory");
       throw new Exception(String.format("Error: Output must be a folder (%s)", dir));
+    }
   }
 
   private boolean checkMakeFile(byte[] bs, String path, Set<String> outputTracker) throws IOException {
@@ -5156,18 +5163,22 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
 
     
   private void generateUMLs() throws Exception {
-      if (!doUMLs) {
+      if (noUML) {
+	  log("Skipping UML generation");
 	  return;
       }
+      log("starting uml generation");
       UMLStructureMapUtilities smu = new UMLStructureMapUtilities(context);
 
       for (FetchedFile f : changeList) {
+	  log("checking  if map: " + f.getPath());
 	  List<StructureMap> worklist = new ArrayList<StructureMap>();
 	  for (FetchedResource r : f.getResources()) {
 	      if ( r.getResource() == null
 		   || ! (r.getResource() instanceof StructureMap)) {
 		  continue;
 	      }
+	      log("found structure map: "  + r.getId());
 	      worklist.add( (StructureMap) r.getResource());
 	  }
 
@@ -5177,7 +5188,10 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
 //		  for (String diagramName : diagrams.keySet().toArray()) {
 		  String diagramName = diagram.getKey(); //need to sanatize
 		  String umlSource = diagram.getValue();
+		  log("generated diagram: " + diagram.getKey());
+		  log("generated diagram source: " + diagram.getValue());
 		  String umlFilename = Utilities.path(umlDir,"StructureMap-" + map.getName() + "-"+ diagramName  +".uml");
+		  log("storing generated diagram at: " + umlFilename);
 		  File umlFile = new File(umlFilename);
 		  TextFile.stringToFile(umlSource,umlFile);
 	      }
@@ -10998,6 +11012,10 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
       if (hasNamedParam(args, "-no-fml")) {
         self.noFML = true;
       }
+      if (hasNamedParam(args, "-no-uml")) {
+        self.noUML = true;
+      }
+
 
       try {
         self.execute();

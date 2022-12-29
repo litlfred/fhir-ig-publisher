@@ -148,7 +148,9 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
     private String  renderSourceStructureDefinition(StructureDefinition sd, String alias, StructureMap map) {
 	List<String> sources = new ArrayList<String>();
 	for ( StructureMapGroupComponent group : map.getGroup()) {
+	    log("Checking group:" + group.getName());
 	    for ( StructureMapGroupInputComponent input : group.getInput()) {
+		log("Checking Group Name(" + group.getName() + ") = Alias(" + ")");
 		if (!input.getName().equals(alias)) {
 		    continue;
 		}
@@ -159,13 +161,13 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	    }
 	}
 
-        
+        log("Got sources: " + String.join(",",sources));
 	String out = "class " + sd.getName() + " { " + "\n";    
 	StructureDefinitionSnapshotComponent snapshot = sd.getSnapshot();	
 	for (ElementDefinition elem : snapshot.getElement()) {
 	    ArrayList<String> types = new ArrayList<String>();
 	    if (!sources.contains(elem.getPath())) {
-		log("Skupping :" + elem.getPath() + " as not in " + String.join(",",sources));
+		log("Skipping :" + elem.getPath() + " as not in " + String.join(",",sources));
 		continue;
 	    }
 
