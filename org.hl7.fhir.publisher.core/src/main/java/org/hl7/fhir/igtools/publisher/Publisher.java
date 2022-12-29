@@ -673,6 +673,7 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
   private String specPath;
   private String qaDir;
   private String fmlDir;
+  private String umlDir;
   private String version;
   private FhirPublication pubVersion;
   private long jekyllTimeout = JEKYLL_TIMEOUT;
@@ -806,6 +807,7 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
   private String nestedIgOutput;
   private boolean genExamples;
   private boolean doTransforms;
+  private boolean doUMLs;
   private boolean allInvariants = true;
   private List<String> spreadsheets = new ArrayList<>();
   private List<String> bundles = new ArrayList<>();
@@ -2718,6 +2720,12 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
         missingDirs.add(s);
     }
     fmlDirs.removeAll(missingDirs);
+
+    if (doUMLs) {
+	umlDir = Utilities.path(tempDir,"_uml");
+	forceDir(umlDir);
+	pagesDirs.add(umlDir);
+    }
     
     missingDirs.clear();
     for (String s : pagesDirs) {
@@ -2891,6 +2899,10 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
     otherFilesStartup.add(Utilities.path(tempDir, "_includes"));
     if (!noFML) {
       otherFilesStartup.add(fmlDir);
+    }
+    doUMLs = template.getDoUMLs();
+    if (doUMLs) {
+      otherFilesStartup.add(umlDir);
     }
 
     if (sourceIg.hasLicense())
@@ -4887,113 +4899,6 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
 
 
 
-    // String umlFilename =  mapName + ".uml";
-    // File umlFile = new File(Utilities.path(outputDir.getAbsolutePath(),umlFilename));
-    // String umlSource = renderStructureMapAsUML(map);
-    // TextFile.stringToFile(umlSource, umlFile);
-    
-  //this UML rendering code doesn't belong here really.
-  private String renderUML(StructureMap map)   {
-      try {
-	  String sourceSD = null;
-	  String targetSD = null;
-	  String sourceAlias = null;
-	  String targetAlias = null;
-	  for (StructureMapStructureComponent input : map.getStructure()){	  
-	      if (input.getMode() == StructureMapInputMode.TARGET) {
-		  log("found target");
-		  targetSD = input.getUrl();
-		  targetAlias = input.alias;		  		  
-	      } else if (input.getMode() == StructureMapInputMode.SOURCE) {
-		  log("found source");
-		  sourceSD = input.getUrl();
-		  sourceAlias = input.alias;		  
-	      }      
-	  }
-	  StructureDefinition source = (StructureDefinition) context.fetchResource(StructureDefinition.class, sourceSD);
-	  StructureDefinition target = (StructureDefinition) context.fetchResource(StructureDefinition.class, targetSD);
-
-	  Map<String,List<String>>  dependencies = new HashMap<String,List<String>>() );
-	  Map<String,StructureMapGroupComponent> components = new HashMap<String,StructureMapGroupComponent>();
-	  for (StructureMapGroupComponent component : map.getGroup()) {
-	      components.put(component.getName(),component);
-	      dependencies = calculateDependencyMap(component.getRule(), dependencies);
-	  }
-
-
-	  //For each List<Rule> want to calc source and target elements implicated
-	  //create a map from Rule.getName() to Rule
-	  //targetName is the output context. when looking at rule.target[].context = targetName then we begin
-	  //  rule.target[].element is then a field needed in target resource
-	  //  to get to source, look at rule.target[].parameter[].valueId would should match a value of rule.source[].context
-	  //  then add to depedenceis rule.target[].element depends on rule[].source.context
-	  //  the rule.source.context can be one of:
-	  //      group.input[].name with mode = source
-	  //      rule.name
-	  //
-	  //   rule.dependent is a call out to another group.  this may be defined in this strcture map or imported
-	  //        rule.dependent.name is the name of the other group
-	  //        
-	  
-	  private Map<String,List<String>> calculateDependencyMap(List<StructureMapGroupRuleComponent> rules, Map<String,List<String>> dependencies){
-	      for (StructuredMapGroupRuleComponent rule : rules) {
-		  for (StructureMapGroupRuleComponent target : rule.getTarget()) {
-		      target.getElem()
-		  }
-		  
-
-	      }
-	      
-	  }
-	  
-	  
-	  List<String> targetElems = getTargetElements(map);
-	  List<String> sourceElems = getElements(new List<String>(),
-
-	  String umlSource = "
-@startuml
-class " + map.getName() + "
-namespace " + sourceSD + "{" + renderClassDiagram(source) + "}
-namespace " + "Structure Map" + "{" +  renderStructureMapGroups(map) + "}
-namespace " + targetSD + "{" + renderClassDiagram(target) + "}
-@enduml
-";	  
-	  return umlSource;	  
-      } catch (Exception e) {
-	  log("Unable to create uml for "  + map.getName() + ":" + e.stackTrace());	  
-      }
-
-  }
-    
-    private new List<String> getTargetElements
-    private String  renderClassDiagram(StructureDefinition sd) {
-	String out = "class " + sd.getName();
-	
-	return out;	
-    }
-
-
-
-    private String  renderStructureMapGroups(List<StructureMapGroupComponent> sgs) {
-	String out = "";	
-	for (StructureMapGroupComponent sg : sgs) {
-	    out += renderStructreMapGroup(sg);	    
-	}
-	return out;
-	
-    }
-
-
-    private String  renderStructureMapGroup(StructureMapGroupComponent group) {
-	String out = "class " + group.getName();	
-	
-	return out;
-	
-    }
-
-    
-
-	
 
     
   private boolean loadResources(boolean needToBuild, FetchedFile igf) throws Exception { // igf is not currently used, but it was about relative references? 
@@ -5030,7 +4935,7 @@ namespace " + targetSD + "{" + renderClassDiagram(target) + "}
 
   private boolean loadMappings(boolean needToBuild, FetchedFile igf) throws Exception {
     for (String s : mappings) {
-      needToBuild = loadMapping(s, needToBuild, igf);
+      needToBuild = loadMapping(s, needToBuild, igf);      
     }
     return needToBuild;
   }
@@ -5238,6 +5143,7 @@ namespace " + targetSD + "{" + renderClassDiagram(target) + "}
     loadLists();
     checkConformanceResources();
     generateLogicalMaps();
+    generateUMLs();
 //    load("StructureMap"); // todo: this is a problem...
     generateAdditionalExamples();
     executeTransforms();
@@ -5245,6 +5151,40 @@ namespace " + targetSD + "{" + renderClassDiagram(target) + "}
     errors.addAll(cql.getGeneralErrors());
     scanForUsageStats();
   }
+
+
+
+    
+  private void generateUMLs() throws Exception {
+      if (!doUMLs) {
+	  return;
+      }
+      UMLStructureMapUtilities smu = new UMLStructureMapUtilities(context);
+
+      for (FetchedFile f : changeList) {
+	  List<StructureMap> worklist = new ArrayList<StructureMap>();
+	  for (FetchedResource r : f.getResources()) {
+	      if ( r.getResource() == null
+		   || ! (r.getResource() instanceof StructureMap)) {
+		  continue;
+	      }
+	      worklist.add( (StructureMap) r.getResource());
+	  }
+
+	  for (StructureMap map : worklist) {
+	      Map<String,String> diagrams = smu.renderUML(map);
+	      for (Map.Entry<String,String> diagram : diagrams.entrySet()) {
+//		  for (String diagramName : diagrams.keySet().toArray()) {
+		  String diagramName = diagram.getKey(); //need to sanatize
+		  String umlSource = diagram.getValue();
+		  String umlFilename = Utilities.path(umlDir,"StructureMap-" + map.getName() + "-"+ diagramName  +".uml");
+		  File umlFile = new File(umlFilename);
+		  TextFile.stringToFile(umlSource,umlFile);
+	      }
+	  }
+      }
+  }
+
 
   private void loadPaths() {
     for (FetchedFile f : fileList) {

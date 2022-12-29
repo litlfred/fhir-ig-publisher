@@ -334,6 +334,11 @@ public class Template {
     return "true".equals(ostr(configuration, "do-transforms"));
   }
 
+
+  public boolean getDoUMLs() throws Exception {
+    return "true".equals(ostr(configuration, "do-umls"));
+  }
+
   public void getExtraTemplates(Map<String, String> extraTemplates) throws Exception {
     JsonArray templates = configuration.getJsonArray("extraTemplates");
     if (templates!=null) {
