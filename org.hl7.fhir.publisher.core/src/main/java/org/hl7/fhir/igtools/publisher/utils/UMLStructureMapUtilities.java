@@ -26,6 +26,7 @@ import org.hl7.fhir.r5.model.StructureMap.StructureMapGroupRuleTargetParameterCo
 import org.hl7.fhir.r5.model.StructureMap.StructureMapInputMode;
 import org.hl7.fhir.r5.model.StructureMap.StructureMapModelMode;
 import org.hl7.fhir.r5.model.StructureMap.StructureMapStructureComponent;
+import org.hl7.fhir.r5.model.StructureMap.StructureMapTransform;
 import org.hl7.fhir.r5.utils.structuremap.ITransformerServices;
 import org.hl7.fhir.r5.utils.structuremap.StructureMapUtilities;
 
@@ -121,7 +122,7 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 		    continue;
 		}
 		for (StructureMapGroupRuleComponent rule : group.getRule()) {
-		    getReferencedElementsBySource(rule,input.getName(),input.getName() + "." ,sources);
+		    getReferencedElementsBySource(rule,input.getName(),"",sources);
 		}
 	    }	    
 	}
@@ -138,27 +139,62 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 		    continue;
 		}
 		for (StructureMapGroupRuleComponent rule : group.getRule()) {
-		    getReferencedElementsByTarget(rule,input.getName(),input.getName() + "." ,targets);
+		    getReferencedElementsByTarget(rule,input.getName(),"",targets);
 		}
 	    }
 	}
 	return targets;
     }
     
-    private String  renderSourceStructureDefinition(StructureDefinition sd, String alias, StructureMap map) {
+    private String  renderSourceStructureDefinition(StructureDefinition sd,  StructureMap map) {
 	List<String> sources = new ArrayList<String>();
-	for ( StructureMapGroupComponent group : map.getGroup()) {
-	    log("Checking group:" + group.getName());
-	    for ( StructureMapGroupInputComponent input : group.getInput()) {
-		log("Checking Group Name(" + group.getName() + ") = Alias(" + ")");
-		if (!input.getName().equals(alias)) {
-		    continue;
-		}
-		for (StructureMapGroupRuleComponent rule : group.getRule()) {
-		    getReferencedElementsByTarget(rule,input.getName(),input.getName() + "." ,sources);
-		}		    
+	StructureMapGroupComponent group = map.getGroupFirstRep();
+	log("Rendering Source SD - Found group " + group.getName() + " while looking for " + sd.getId());
+	log("SD ftype " + sd.fhirType());
+	log("SD gettype " + sd.getType());
+	log("SD gettypename " + sd.getTypeName());
+	log("SD getname " + sd.getName());
+	String sourceAlias  = null;
+	String targetAlias = null;
 
+	for (StructureMapStructureComponent structure : map.getStructure()) {
+	    log("Got structure: " + structure.getAlias());
+	    if (structure.getMode() == StructureMapModelMode.SOURCE) {
+		sourceAlias = structure.getAlias();
+	     } else if (structure.getMode() == StructureMapModelMode.TARGET) {
+		targetAlias = structure.getAlias();
+	    }	    
+	}
+
+	log("render source - SA=" + sourceAlias + "TA=" + targetAlias);
+	
+	for ( StructureMapGroupInputComponent input : group.getInput()) {
+	    log("scanning source for input:" + input.getName());
+	    if (sourceAlias.equals(input.getType())) {
+		log("Looking at group input source Name(Type): " + input.getName() + "(" + input.getType() + ")");
+		for (StructureMapGroupRuleComponent rule : group.getRule()) {
+		    for (StructureMapGroupRuleSourceComponent s : rule.getSource()) {
+			log("scanning rule \"" + rule.getName() + "\" for source " + input.getName() + "(" + input.getType() + ") against " + s.getContext());
+			getReferencedElementsBySource(rule,s.getVariable(), sd.getName() + "." ,sources);
+			//getReferencedElementsBySource(rule,rule.getVariable(), sd.getName() + "." ,sources);
+		    }
+		}
+		
+	    } else if (targetAlias.equals(input.getType())) {
+		log("Looking at group input source Name(Type): " + input.getName() + "(" + input.getType() + ")");
+		for (StructureMapGroupRuleComponent rule : group.getRule()) {
+		    for (StructureMapGroupRuleTargetComponent t : rule.getTarget()) {
+			log("scanning rule " + rule.getName() + " for source " + input.getName() );
+			//getReferencedElementsByTarget(rule,t.getVariable(), sd.getName() + "." ,sources);
+		    }
+		}		    
 	    }
+	    // 	log("skipping: Not source");
+	    // 	continue;
+	    // }
+	    //group.
+            //	    input.getType().equals(
+
 	}
 
         log("Got sources: " + String.join(",",sources));
@@ -183,28 +219,93 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
     }
 
 
-    private String  renderTargetStructureDefinition(StructureDefinition sd ,String alias, StructureMap map) {
+    private String  renderTargetStructureDefinition(StructureDefinition sd, StructureMap map) {
 	List<String> targets = new ArrayList<String>();
-	for (  StructureMapGroupComponent group : map.getGroup()) {
-	    for ( StructureMapGroupInputComponent input : group.getInput())  {
-		if (!input.getName().equals(alias)) {
-		    continue;
-		}
+	StructureMapGroupComponent group = map.getGroupFirstRep();
+	log("rendering target SD - Found group " + group.getName() + " while looking for " + sd.getId());
+	log("SD ftype " + sd.fhirType());
+	log("SD gettype " + sd.getType());
+	log("SD gettypename " + sd.getTypeName());
+	log("SD getname " + sd.getName());
+	String sourceAlias = null;
+	String targetAlias = null;
+	for (StructureMapStructureComponent structure : map.getStructure()) {
+	    log("Got structure: " + structure.getAlias());
+	    if (structure.getMode() == StructureMapModelMode.SOURCE) {
+		sourceAlias = structure.getAlias();
+	     } else if (structure.getMode() == StructureMapModelMode.TARGET) {
+		targetAlias = structure.getAlias();
+	    }
+	    
+	}
+	log("render Target - SA=" + sourceAlias + "TA=" + targetAlias);
+
+	for ( StructureMapGroupInputComponent input : group.getInput())  {
+	    log("scanning target for input:" + input.getName());
+	    if (input.getMode() != StructureMapInputMode.TARGET) {
+		log("skipping: Not target");
+		continue;
+	    }
+	    log("Looking at structure input target: " + input.getName() + " (" + input.getType() +"->" + sd.getName() + ")");
+	    // for (StructureMapGroupRuleComponent rule : group.getRulbe()) {
+	    // 	getReferencedElementsByTarget(rule,input.getName(),sd.getName() . "." ,targets);
+	    // }
+	    log("Checking " + targetAlias + " or " + sourceAlias + "=" + input.getType());
+	    if (sourceAlias.equals(input.getType())) {
+		log("Looking at sourcealias match for group input source Name(Type): " + input.getName() + "(" + input.getType() + ")");
 		for (StructureMapGroupRuleComponent rule : group.getRule()) {
-		    getReferencedElementsByTarget(rule,input.getName(),input.getName() + "." ,targets);
+		    log(" ------ at sourcealias rule \"" + rule.getName() + "\"");
+		    for (StructureMapGroupRuleSourceComponent source : rule.getSource()) {
+			log(" ------ ------------ rule source " + source.getContext() + "." + source.getElement() + " as " + source.getVariable());
+			if ( input.getName().equals(source.getContext() )) {
+			    log("SmurfA:"  + source.getContext());
+			    log("scanning rule \"" + rule.getName() + "\" for source " + input.getName() + "(" + input.getType() + ")");
+			    getReferencedElementsBySource(rule,source.getVariable(), sd.getName() + "." ,targets);
+			}
+		    }
+		    
+		}		    
+		
+	    } else if (targetAlias.equals(input.getType())) {
+		log("Looking at targetalias match for group input source Name(Type): " + input.getName() + "(" + input.getType() + ")");
+		for (StructureMapGroupRuleComponent rule : group.getRule()) {
+		    log(" ------ at targetalias rule \"" + rule.getName() + "\"");
+		    for (StructureMapGroupRuleSourceComponent source : rule.getSource()) {
+			log(" ------ ------------ rule source " + source.getContext() + "." + source.getElement() + " as " + source.getVariable());
+			if ( input.getName().equals(source.getContext() )) {
+			    log("SmurfBS:"  + source.getContext());  //We have a match
+			    String arrowSource = sd.getName() + "." + source.getElement();
+			    log("Adding arrow source " + arrowSource);
+			    targets.add(arrowSource);
+			    log("scanning rule \"" + rule.getName() + "\" for source " + arrowSource + " on source variable " + source.getVariable());
+			    getReferencedElementsBySource(rule,source.getVariable(), arrowSource + "." ,targets);
+			}
+		    }
+
+		    for (StructureMapGroupRuleTargetComponent target : rule.getTarget()) {
+			log(" ------ ------------ rule target " + target.getContext() + "." + target.getElement());
+			if ( input.getName().equals(target.getContext() )) {
+			    log("SmurfBT:"  + target.getContext());
+			}
+
+			log("scanning rule \"" + rule.getName() + "\" for source " + input.getName() );
+			//getReferencedElementsByTarget(rule,t.getVariable(), sd.getName() + "." ,targets);
+		    }
 		}		    
 	    }
-	}
 
+	    
+	}
+	
+        log("Got targets: " + String.join(",",targets));
 	String out = "class " + sd.getName() + " { " + "\n";	    
 	StructureDefinitionSnapshotComponent snapshot = sd.getSnapshot();	
 	for (ElementDefinition elem : snapshot.getElement()) {
 	    ArrayList<String> types = new ArrayList<String>();
 	    if (!targets.contains(elem.getPath())) {
-		log("Skupping :" + elem.getPath() + " as not in " + String.join(",",targets));
 		continue;
 	    }
-
+	    log("Matched element:" + elem.getPath() + " in targets " + String.join(",",targets));
 	    for (ElementDefinition.TypeRefComponent component : elem.getType()) {
 		types.add(component.getName());
 		//maybe types.push(component.toString());
@@ -215,6 +316,8 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	out += "}" + "\n";
 	return out;	
     }
+
+
 
     
 
@@ -310,36 +413,40 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
     }
     
     private List<String> getReferencedElementsByTarget(StructureMapGroupRuleComponent rule, String name, String prefix, List<String> rules) {
-	for (StructureMapGroupRuleTargetComponent target : rule.getTarget()) {
-	    if ( !name.equals(target.getContext() ) ){
+	log("Scanning for targets [" + prefix + "]" + name + " in rule \"" + rule.getName()  + "\"");
+	//look for the incoming target as we we walk down the tree of rules
+	for (StructureMapGroupRuleComponent r : rule.getRule()) {
+	    log("Walking down rule, looking for targets: \n" + r.getName() + "\" on element path " + prefix + name );
+	    getReferencedElementsByTarget(r,name, prefix, rules );
+	}
+	for (StructureMapGroupRuleTargetComponent t : rule.getTarget()) {
+	    log("Looking at target context " + t.getContext() + " with [" + prefix + "]" + name + " on target elem " +  t.getElement() );
+	    if (!t.hasElement() || !name.equals(t.getContext() )
+		) {
+		log("no match for " + name + "=" + t.getContext());
+		continue;
+	    }
+	    log("match for " + name + "=" + t.getContext());
+	    String element = t.getElement();
+	    String variable = t.getVariable();
+	    if (variable == null || variable.isBlank()) {
+		variable = name;
+	    }
+	    //String type = t.getType();
+	    for (StructureMapGroupRuleComponent r : rule.getRule()) {
+		getReferencedElementsByTarget(r, variable, prefix + element  + ".",rules);
+	    }
+	    if ( !name.equals(t.getContext() ) ){
 		continue;
 	    }
 	    String out = prefix + name;
-            //	    if (rule.hasType() type) {
-            //		out += " : " + type;
-            //	    }
+	    // if (t.hasType() ) {
+	    // 	out += " : " + t.getType();
+	    // }
 	    if (!rules.contains (out)) {
 		rules.add( out);
 	    }
 
-	    for (StructureMapGroupRuleComponent r : rule.getRule()) {
-		getReferencedElementsByTarget(r,name, prefix, rules );
-	    }
-	    for (StructureMapGroupRuleTargetComponent t : rule.getTarget()) {
-		if (!t.hasElement() || name.equals(t.getContext() )
-		    ) {
-		    continue;
-		}
-		String element = t.getElement();
-		String variable = t.getVariable();
-		if (variable == null || variable.isBlank()) {
-		    variable = name;
-		}
-		//String type = t.getType();
-		for (StructureMapGroupRuleComponent r : rule.getRule()) {
-		    getReferencedElementsByTarget(r, variable, prefix + element  + ".",rules);
-		}
-	    }
 	}
 	return rules;
     }
@@ -352,70 +459,257 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
     
     private List<String> getReferencedElementsBySource(StructureMapGroupRuleComponent rule, String name, String prefix, List<String> rules) {
 
-	for (StructureMapGroupRuleSourceComponent source : rule.getSource()) {
-	    if ( !name.equals(source.getContext() ) ){
+	for (StructureMapGroupRuleComponent r : rule.getRule()) {
+	    getReferencedElementsBySource(r,name, prefix, rules );
+	}
+
+	for (StructureMapGroupRuleSourceComponent s : rule.getSource()) {
+	    if (! s.hasElement() || !name.equals(s.getContext())) {
+		continue;
+	    }
+	    String element = s.getElement();
+	    String variable = s.getVariable();
+	    if (variable == null || variable.isBlank()) {
+		variable = name;
+	    }
+	    //String type = s.getType();
+	    for (StructureMapGroupRuleComponent r : rule.getRule()) {
+		getReferencedElementsBySource(r, variable, prefix + element  + ".",rules);
+	    }
+	    
+	    if ( !name.equals(s.getContext() ) ){
 		continue;
 	    }
 	    String out = prefix + name;
-	    if (source.hasType()) {		
-		out += " : " + source.getType();
+	    if (s.hasType()) {		
+		out += " : " + s.getType();
 	    }
 	    if (!rules.contains (out)) {
 		rules.add( out);
 	    }
-	    for (StructureMapGroupRuleComponent r : rule.getRule()) {
-		getReferencedElementsBySource(r,name, prefix, rules );
-	    }
-	    for (StructureMapGroupRuleSourceComponent s : rule.getSource()) {
-		if (! s.hasElement() || !name.equals(s.getContext())) {
-		    continue;
-		}
-		String element = s.getElement();
-		String variable = s.getVariable();
-		if (variable == null || variable.isBlank()) {
-		    variable = name;
-		}
-		//String type = s.getType();
-		for (StructureMapGroupRuleComponent r : rule.getRule()) {
-		    getReferencedElementsBySource(r, variable, prefix + element  + ".",rules);
-		}
-	    }
-	} 
+	}
 	return rules;
     }
-
+	
 
     private String renderStructureMapUML(StructureMap map) {
+
 	String sourceSD = null;
 	String targetSD = null;
 	String sourceAlias = null;
 	String targetAlias = null;
-	for (StructureMapStructureComponent input : map.getStructure()){	  
-	    if (input.getMode() == StructureMapModelMode.TARGET) {
-		log("found target");
-		targetSD = input.getUrl();
-		targetAlias = input.getAlias();		  		  
-	    } else if (input.getMode() == StructureMapModelMode.SOURCE) {
-		log("found source");
-		sourceSD = input.getUrl();
-		sourceAlias = input.getAlias();		  
+	//map is variable name to element path
+	Map<String,String> vars = new HashMap<String,String>();
+	StructureDefinition source = null;
+	StructureDefinition target = null;
+	StructureMapGroupComponent group = map.getGroupFirstRep();
+	log("looking for arrow components in group " + group.getName());
+
+	for (StructureMapStructureComponent structure : map.getStructure()){
+	    log("Checking structure struccture of map:" + structure.getAlias());
+	    if (structure.getMode() == StructureMapModelMode.TARGET) {
+		log("found target:" + structure.getUrl() + " as " + structure.getAlias() );
+		targetSD = structure.getUrl();
+		targetAlias = structure.getAlias();
+		target = (StructureDefinition) worker.fetchResource(StructureDefinition.class, targetSD);
+		for ( StructureMapGroupInputComponent input : group.getInput())  {
+		    log("Scanninng input (" + input.getName() + ") with type <" + input.getType() + ">") ;
+		    if (! targetAlias.equals(input.getType())) {
+			continue;
+		    }
+		    log("  Adding to vars:" + target.getName() + " as " + targetAlias );
+		    vars.put(input.getName(),target.getName()); //or .getType() or getTypeName()?
+		}
+		
+	    } else if (structure.getMode() == StructureMapModelMode.SOURCE) {
+		log("found source: " + structure.getUrl() + " as " + structure.getAlias() );
+		sourceSD = structure.getUrl();
+		sourceAlias = structure.getAlias();
+		source = (StructureDefinition) worker.fetchResource(StructureDefinition.class, sourceSD);
+		for ( StructureMapGroupInputComponent input : group.getInput())  {
+		    log("Scanninng input (" + input.getName() + ") with type <" + input.getType() + ">") ;
+		    if (! sourceAlias.equals(input.getType())) {
+			continue;
+		    }
+		    log("  Adding to vars:" + source.getName() + " as " + sourceAlias );
+		    vars.put(input.getName(),source.getName()); //or .getType() or getTypeName()?
+		}
+
 	    }      
 	}
-	// List<String> sources = new ArrayList<String>();
-	// for (StructureMapGroupRuleComponent rule : map.getRule()) {
-	//     for (StructureMapGroupRuleComponent rule : map.getRule()) {
-	//     sources.addAll(getReferencedElementsBySource(rule,rule.getName()));
-	// }
-	StructureDefinition source = (StructureDefinition) worker.fetchResource(StructureDefinition.class, sourceSD);
-	StructureDefinition target = (StructureDefinition) worker.fetchResource(StructureDefinition.class, targetSD);
-	    
+	log("source SD ftype " + source.fhirType());
+	log("source SD gettype " + source.getType());
+	log("source SD gettypename " + source.getTypeName());
+	log("source SD getname " + source.getName());
+	log("target SD ftype " + target.fhirType());
+	log("target SD gettype " + target.getType());
+	log("target SD gettypename " + target.getTypeName());
+	log("target SD getname " + target.getName());
+
+	List<String> arrows = new ArrayList<String>();	
+	for (StructureMapGroupRuleComponent rule : group.getRule()) {
+	    log("looking for arrows under top level rule: \"" + rule.getName() + "\"");
+	    calculateArrows(rule,vars,arrows);
+	}
+
+
+	String[] sources = vars.values().toArray(new String[vars.values().size()]);
+	log("Got variables: " + String.join(",",sources));
+
+	String sourceClassUML = "class " + source.getName() + " {\n " + String.join("\n",sources) + "\n}\n";
+//	String targetClassUML = "class " + target.getName() + " {\n " + String.join("\n",targets) + "\n}\n";	    
+
 	String out = "package \"" + map.getName() + "\" {" + "\n"
-	    + "  namespace \"" + sourceSD + "\"\n{" + renderSourceStructureDefinition(source,sourceAlias,map) + "} " +  "\n"
-	    + "  namespace \"" + map.getName() + "\" {\n" +  renderStructureMapGroups(map.getGroup()) + "\n} " + "\n"
-	    + "  namespace \"" + targetSD + "\"\n{" + renderTargetStructureDefinition(target,targetAlias,map) + "\n} " + "\n"
+	    + "  namespace \"" + sourceSD + "\"\n{\n" + sourceClassUML + "} " +  "\n"
+//	    + "  namespace \"" + map.getName() + "\" {\n" +  renderStructureMapGroups(map.getGroup()) + "\n} " + "\n"
+//	    + "  namespace \"" + targetSD + "\"\n{" + targetClassUML + "\n} " + "\n"
 	    + "} " + "\n";
-	return out;
+	return out;    
     }
+
+    private void calculateArrows(StructureMapGroupRuleComponent rule, Map<String,String> vars, List<String> arrows) {
+	log("calculating arrows on rule \"" + rule.getName() + "\"");
+	log("Source Keys=" + String.join(",",vars.keySet().toArray(new String[vars.keySet().size()])));
+	log("Sources=" + String.join(",",vars.values().toArray(new String[vars.values().size()])));
+	for (StructureMapGroupRuleSourceComponent src : rule.getSource()) {
+	    log("scanning src with context " + src.getContext());
+	    String context = src.getContext();
+	    if  (vars.containsKey(context)) {
+		log("found context (" + context + ") in rule for " + vars.get(context) + " on src element " + src.getElement() + " to be called as " + src.getVariable());
+		if (src.hasVariable() && src.hasElement()) {
+		    log("Adding source var " + src.getVariable() + "-> " + vars.get(context) + "." + src.getElement());
+		    vars.put(src.getVariable(),vars.get(context) + "." + src.getElement());
+		} else {
+		    vars.put(context+ "." + src.getElement() , vars.get(context) + "." + src.getElement());
+		}
+	    } else {
+		log("No match for source context=" + src.getContext());
+	    }
+	}
+	for (StructureMapGroupRuleTargetComponent trgt : rule.getTarget()) {
+	    log("scanning trgt with context " + trgt.getContext());
+	    String context = trgt.getContext();
+	    if  (vars.containsKey(context)) {
+		log("found context (" + context + ") in rule for " + vars.get(context) + " on trgt element " + trgt.getElement() );
+		if (trgt.hasVariable() && trgt.hasElement()) {
+		    log("Adding source var " + trgt.getVariable() + "-> " + vars.get(context) + "." + trgt.getElement());
+		    vars.put(trgt.getVariable(),vars.get(context) + "." + trgt.getElement());
+		} else {
+		    vars.put(context + "." + trgt.getElement() , vars.get(context) + "." + trgt.getElement());
+		}
+	    }  else {
+		log("No match for target context=" + trgt.getContext());
+	    }
+	    
+	    if (!trgt.hasTransform() ) {
+		continue;
+	    }
+	    log("transforms -  need to add arrows");
+	    //this is the end of the road
+	    //should create arrows here
+	    //arrows.add(arrow)
+	    StructureMapTransform transform = trgt.getTransform();
+	    String targetPath = "";
+	    String targetVar  = trgt.getContext();
+	    if (vars.containsKey(targetVar)) {
+		targetPath = vars.get(targetVar);
+	    } else {
+		log("Cannot find target var " + targetVar);
+		continue;
+	    }
+
+	    switch (transform) {
+	    case TRANSLATE:		    
+	    case APPEND:
+	    case POINTER:
+	    case COPY:
+	    case CC:
+	    case C:
+	    case REFERENCE:
+	    case CAST:
+	    case TRUNCATE:
+		StructureMapGroupRuleTargetParameterComponent param = trgt.getParameter().get(0);
+		if (param != null ) {
+		    String sourceVar = param.getValueIdType().asStringValue();
+		    log("sourceVar= " + sourceVar);
+		    if (sourceVar != null && !sourceVar.isBlank() && !vars.containsKey(sourceVar)) {
+			String arrow =  vars.get(sourceVar) +  " -->" + targetPath + " : " + rule.getName() + "\n";
+			log("Making arrow=" + arrow);
+			arrows.add(arrow);
+    		    }
+		}
+		break;
+	    case CREATE:
+	    case EVALUATE:				
+	    case ESCAPE:
+	    case DATEOP:
+		break;
+	    }
+	}
+	if (rule.hasDependent()) {
+	    log("found dependants - need to add arrows");
+							     
+	}
+	for (StructureMapGroupRuleComponent r: rule.getRule()) {
+	    log("Walking down rule \"" + r.getName() + "\"");
+	    calculateArrows(r,vars,arrows);
+	}
+    }
+    
+	
+
+
+    
+	// 	    //we have a match against a source of the mapand the rules in group:
+	// 	    // private Array<String> buildArrows(StructureMapGroupRuleComponent rule, String prefix, Array<String> sources, Array<String> targets)
+	// 	    Array<String> arrows = retrieveArrows(rule,sources,targets)
+		    
+	// 	    log(" ------ at sourcealias rule \"" + rule.getName() + "\"");
+	// 		log(" ------ ------------ rule source " + src.getContext() + "." + src.getElement() + " as " + src.getVariable());
+	// 		if ( ! input.getName().equals(src.getContext() )) {
+	// 		    continue;
+	// 		}
+			
+	// 		//String element = s.getElement();
+	// 		//String variable = s.getVariable();
+	// 		//if (variable == null || variable.isBlank()) {
+	// 		//    variable = name;
+	// 		//}
+
+	// 		log("SmurfA:"  + src.getContext());
+	// 		log("scanning rule \"" + rule.getName() + "\" for source " + input.getName() + "(" + input.getType() + ")");
+	// 		if (input.getMode() == StructureMapInputMode.SOURCE) {
+	// 		    String arrowSource = source.getName() + "." + src.getElement();
+	// 		    log("Adding arrow source to source: " + arrowSource);
+	// 		    sources.add(arrowSource);
+	// 		    getReferencedElementsBySource(rule,src.getVariable(), source.getName() + "." ,targets);
+	// 		} else if (input.getMode() == StructureMapInputMode.TARGET) {
+	// 		    String arrowTarget = target.getName() + "." + src.getElement();
+	// 		    log("Adding arrow target to targets: " + arrowTarget);
+	// 		    targets.add(arrowTarget);
+	// 		}
+	// 	    }
+	// 	}
+	//     }
+	// }
+
+	// StructureDefinitionSnapshotComponent snapshot = sd.getSnapshot();	
+	// for (ElementDefinition elem : snapshot.getElement()) {
+	//     ArrayList<String> types = new ArrayList<String>();
+	//     if (!targets.contains(elem.getPath())) {
+	// 	continue;
+	//     }
+	//     log("Matched element:" + elem.getPath() + " in targets " + String.join(",",targets));
+	//     for (ElementDefinition.TypeRefComponent component : elem.getType()) {
+	// 	types.add(component.getName());
+	// 	//maybe types.push(component.toString());
+	//     }
+	//     //maybe use elem.getName()
+	//     out += "  " + elem.getPath() + " " + String.join(",",types) +  "\n";
+	// }
+	// out += "}" + "\n";
+	// return out;	
+    
 
     // // private String renderStuctureMapDetails(StructureMap map, Map<String,String> diagrams) {
     // // 	renderStructureMapGroupDetails(map.getGroup(),diagrams);
@@ -619,7 +913,6 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
     // // 		case StructureMapInputMode.CREATE:
     // // 		case StructureMapInputMode.EVALUATE:				
     // // 		case StructureMapInputMode.ESCAPE:
-    // // 		case StructureMapInputMode.TRANSLATE:
     // // 		case StructureMapInputMode.DATEOP:
     // // 		    break;
     // // 		}
@@ -669,13 +962,5 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 
     // 	return out;
     // }
-
-
-
-
-    
-    
-
-
     
 }

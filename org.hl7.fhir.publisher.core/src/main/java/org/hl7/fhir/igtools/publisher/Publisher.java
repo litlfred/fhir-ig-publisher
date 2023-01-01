@@ -2466,7 +2466,6 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
     } catch (Exception e) {
       throw new Exception("Error Parsing File "+igName+": "+e.getMessage(), e);
     }
-    log ("Source IG1= \n"  +sourceIg.toString());
     template = templateManager.loadTemplate(templateName, rootDir, sourceIg.getPackageId(), mode == IGBuildMode.AUTOBUILD);
 
     if (template.hasExtraTemplates()) {
@@ -2482,7 +2481,6 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
     
     Map<String, List<ValidationMessage>> messages = new HashMap<String, List<ValidationMessage>>();
     sourceIg = template.onLoadEvent(sourceIg, messages);
-    log ("Source IG2= \n"  +sourceIg.toString());
     checkOutcomes(messages);
     // ok, loaded. Now we start loading settings out of the IG
     tool = GenerationTool.Jekyll;
@@ -2538,7 +2536,6 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
       } else if (pc.equals("path-resource")) {
         String dir = Utilities.path(rootDir, p.getValue());
         if (!resourceDirs.contains(dir)) {
-	    log("Adding to resource dirs" + dir);
           resourceDirs.add(dir);
         }
       } else if (pc.equals("autoload-resources")) {     
@@ -4059,16 +4056,10 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
 
   private void forceDir(String dir) throws Exception {
     File f = new File(dir);
-    log("fd: checking " +f);
     if (!f.exists())
-    {
-	log("fd: does not exist");
       Utilities.createDirectory(dir);
-    }
-    else if (!f.isDirectory()) {
-	log("fd: is not directory");
+    else if (!f.isDirectory()) 
       throw new Exception(String.format("Error: Output must be a folder (%s)", dir));
-    }
   }
 
   private boolean checkMakeFile(byte[] bs, String path, Set<String> outputTracker) throws IOException {
@@ -5171,14 +5162,13 @@ public class Publisher implements IWorkerContext.ILoggingService, IReferenceReso
       UMLStructureMapUtilities smu = new UMLStructureMapUtilities(context);
 
       for (FetchedFile f : changeList) {
-	  log("checking  if map: " + f.getPath());
 	  List<StructureMap> worklist = new ArrayList<StructureMap>();
 	  for (FetchedResource r : f.getResources()) {
 	      if ( r.getResource() == null
 		   || ! (r.getResource() instanceof StructureMap)) {
 		  continue;
 	      }
-	      log("found structure map: "  + r.getId());
+	      log("found structure map: "  + r.getId() + " in file " + f.getPath());
 	      worklist.add( (StructureMap) r.getResource());
 	  }
 
