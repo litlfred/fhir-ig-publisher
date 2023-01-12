@@ -4,9 +4,9 @@ package org.hl7.fhir.igtools.publisher;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.TreeHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 
 
 import org.hl7.fhir.exceptions.FHIRException;
@@ -67,6 +67,7 @@ import org.hl7.fhir.utilities.TextFile;
 
 public class UMLStructureMapUtilities extends StructureMapUtilities {
 
+
     
     private final IWorkerContext worker; //this should have been a protected variable in parent class :-(
 
@@ -101,14 +102,14 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
     
     //this UML rendering code doesn't belong here really.
     public Map<String,String> renderUML(StructureMap map) throws FHIRException  {
-	Map<String,String> diagrams = new HashMap<String,String>();
+	Map<String,String> diagrams = new TreeHashMap<String,String>();
 	try {
-	    String umlSource = "@startuml" + "\n" 
-		+ "skinparam groupInheritance 2" + "\n"
-		+ renderStructureMapUML(map) + "\n"
+	    String umlSource
+		= "@startuml" + "\n" 
+		+ " skinparam groupInheritance 2" + "\n"
+		+ renderOverviewStructureMapUML(map) + "\n"
 		+ "@enduml" + "\n";
 	    diagrams.put("overview",umlSource);
-	    //  renderStructureMapGroupDetails(map.getGroup(),diagrams);
 	} catch (Exception e) {
 	    log("Unable to create uml for "  + map.getName() + ":" + e.toString());
 	}
@@ -117,10 +118,10 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 
 
 
-    private String renderStructureMapUML(StructureMap map) throws FHIRException {
+    protected String renderOverviewStructureMapUML(StructureMap map) throws FHIRException {
 	//maps are variable name to element path
-	Map<String,String> svars = new TreeMap<String,String>();
-	Map<String,String> tvars = new TreeMap<String,String>();
+	Map<String,String> svars = new TreeHashMap<String,String>();
+	Map<String,String> tvars = new TreeHashMap<String,String>();
 	StructureDefinition source = null;
 	StructureDefinition target = null;
 	StructureMapGroupComponent group = map.getGroupFirstRep();
@@ -143,7 +144,9 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 			continue;
 		    }
 		    log("      Adding to target vars:" + target.getName()  );
-		    tvars.put(input.getName(),target.getName()); //or .getType() or getTypeName()?
+		    //tvars.put(input.getName(),target.getName()); //or .getType() or getTypeName()?
+		    tvars.put(input.getName(),"."); //or .getType() or getTypeName()?
+		    addTPort(".");
 		}
 		break;
 	    case SOURCE :
@@ -160,19 +163,14 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 			continue;
 		    }
 		    log("      Adding to source vars:" + source.getName() );
-		    svars.put(input.getName(),source.getName()); //or .getType() or getTypeName()?
-		}		break;
+		    //svars.put(input.getName(),source.getName()); //or .getType() or getTypeName()?
+		    svars.put(input.getName(),"."); //or .getType() or getTypeName()?
+		    addSPort(".");
+		}
+		break;
 	    }      
 	}
 	log("done matching first group against structure");
-	log(" source SD ftype " + source.fhirType());
-	log(" source SD gettype " + source.getType());
-	log(" source SD gettypename " + source.getTypeName());
-	log(" source SD getname " + source.getName());
-	log(" target SD ftype " + target.fhirType());
-	log(" target SD gettype " + target.getType());
-	log(" target SD gettypename " + target.getTypeName());
-	log(" target SD getname " + target.getName());
 
 	if (source == null) {
 	    throw new FHIRException("Could not find source when generating UML for structure map:" + map.getName());
@@ -193,26 +191,144 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	log("Starting target Vars=" + tout);
 
 	
-	List<String> arrows = new ArrayList<String>();	
+
+	Map<String,String> arrows = new HashMap<String,String>();	
 	for (StructureMapGroupRuleComponent rule : group.getRule()) {
 	    log("looking for arrows under top level rule: \"" + rule.getName() + "\"");
-	    calculateArrows(rule,svars,tvars,arrows);
+	    calculateArrows(rule,svars,tvars,arrows,true);
 	}
 
-	log("Found " + arrows.size() + " arrows");
-	String sourceClassUML = "    class " + source.getName() + " {\n      " + String.join("\n      ",svars.values().toArray(new String[svars.values().size()])) + "\n    }\n";
-	String targetClassUML = "    class " + target.getName() + " {\n      " + String.join("\n      ",tvars.values().toArray(new String[tvars.values().size()])) + "\n    }\n";
+	sout = "";
+	for (String s: svars.keySet()) {
+	    sout += "\n     " + s + "->" + svars.get(s) ;
+	}
+	log("  Source Vars=" + sout);
+	tout = "";
+	for (String t: tvars.keySet()) {
+	    tout += "\n     " + t + "->" + tvars.get(t) ;
+	}
+	log("  Target Vars=" + tout);
 
-	String out = "package \"" + map.getName() + "\" {" + "\n"
-	    + "  namespace \"" + source.getName() + "\" {\n" + sourceClassUML + "\n  }\n"
-//	    + "  namespace \"" + map.getName() + "\" {\n" +  renderStructureMapGroups(map.getGroup()) + "\n} " + "\n"
-	    + "  namespace \"" + target.getName() + "\" {\n" + targetClassUML + "\n  }\n"
-	    + "  " + String.join("\n  ",arrows)  + "\n"
-	    + "} " + "\n";
-	return out;    
+
+	String svarRows = "      <tr><td align=\"left\" bgcolor=\"lightgray\" border=\"0\">" + source.getName() + "</td></tr>\n";
+	for (String k: svars.keySet()) {
+	    log("adding source row " + k + " pointing at " + svars.get(k));
+	    String format = "align=\"left\"";
+	    if (k.equals(".")) {
+		format += " bgcolor=\"lightgray\" border=\"0\"";
+	    }
+	    String svar = svars.get(k);
+	    if (svar.startsWith(".")) {
+		svarRows += "      <tr><td align=\"left\" port=\"" + getSPort(svar) + "\">" + svars.get(k) + " as " + k + "</td></tr>\n";
+	    } else {
+		svarRows += "      <tr><td align=\"left\" port=\"" + getSPort(svar) + "\">" + svars.get(k)  + "</td></tr>\n";
+	    }
+	}
+	String tvarRows = "      <tr><td align=\"left\" bgcolor=\"lightgray\" border=\"0\">" + target.getName() + "</td></tr>\n";
+	for (String k: tvars.keySet()) {
+	    log("adding target row " + k + " pointing at " + tvars.get(k));
+	    String tvar = tvars.get(k);
+	    tvarRows += "      <tr><td align=\"left\" port=\"" + getTPort(tvar) + "\">" + tvars.get(k) + " as " + k + "</td></tr>\n";
+	}      
+	
+	
+	String sourceNode
+	    = "   node" + dotSanatize(source.getName()) + " [\n"
+	    + "    shape=\"none\"\n"
+	    + "    href=\"" + source.getUrl() + "\"\n"
+	    + "    tooltip=\"" + source.getUrl() + "\"\n" 
+	    + "    label=<\n"
+	    + "     <table>\n"
+	    + svarRows
+	    + "     </table>\n"
+	    + "    >\n"
+	    + "   ]\n";
+
+	String targetNode
+	    = "   node" + dotSanatize(target.getName()) + " [\n"
+	    + "    shape=\"none\"\n"
+	    + "    href=\"" + target.getUrl() + "\"\n"
+	    + "    tooltip=\"" + target.getUrl() + "\"\n" 
+	    + "    label=<\n"
+	    + "     <table>\n"
+	    + tvarRows
+	    + "     </table>\n"
+	    + "    >\n"
+	    + "   ]\n";
+	
+	String arrowList = "";
+	for (String k: arrows.keySet()) {
+	    log("Adding arrow for " + k + " to " + arrows.get(k));
+	    arrowList
+		+= "   node" + dotSanatize(source.getName()) + ":" + getSPort(k)
+		+  " -> node" + dotSanatize(target.getName()) + ":" + getTPort(arrows.get(k)) + "\n";
+	}
+
+	String digraph  
+	    =  " digraph " + dotSanatize(map.getName()) + " {\n"
+	    + "  subgraph cluster" + dotSanatize(map.getName()) + "{\n"
+	    + "   label=<<font color=\"blue\">" + dotSanatize(map.getName()) + "</font>>\n"
+	    + "   href=\"" + map.getUrl() + "\"\n"
+	    + "   tooltip=\"" + map.getUrl() + "\"\n"
+	    + "   labeloc=\"top\"\n"
+	    + "   {rank = same; node" + dotSanatize(source.getName()) + "; node" + dotSanatize(target.getName()) + "; }\n"
+	    +     sourceNode
+	    +     targetNode
+	    +     arrowList
+	    + "  }\n"
+	    + " }\n";
+	log(digraph);
+	return digraph;
     }
 
-    private void calculateArrows(StructureMapGroupRuleComponent rule, Map<String,String> svars, Map<String,String> tvars,List<String> arrows) {
+
+    String dotSanatize(String s) {
+	return s.replaceAll("[\\W]|_", "_");
+    }
+
+
+    protected Map<String,String> sports = new HashMap<String,String>();
+
+    protected String getSPort(String s) {
+	if (!sports.containsKey(s)) {
+	    log("Cannot find source port for " + s);
+	}
+	return sports.get(s);
+    }
+    protected void addSPort(String s) {
+	if (sports.containsKey(s)) {
+	    return;
+	}
+	String sport;
+	if (s.startsWith("ValueString(")) {
+	    sport = "C" + sports.size();
+	} else {
+	    sport = dotSanatize(s);
+	}
+	log("Adding source port " + s + " as " + sport);       	
+	sports.put(s,sport);
+    }
+
+
+    protected Map<String,String> tports = new HashMap<String,String>();
+
+    protected String getTPort(String t) {
+	if (!tports.containsKey(t)) {
+	    log("Cannot find target port for " + t);
+	}
+	return tports.get(t);
+    }
+    protected void addTPort(String t) {
+	if (tports.containsKey(t)) {
+	    return;
+	}
+	String tport = dotSanatize(t);
+	log("Adding target port " + t + " as " + tport);
+	tports.put(t,tport);
+    }
+
+    
+    protected void calculateArrows(StructureMapGroupRuleComponent rule, Map<String,String> svars, Map<String,String> tvars,Map<String,String> arrows, boolean recurse) {
 	log("calculating arrows on rule \"" + rule.getName() + "\"");
 	String sout = "";
 	for (String s: svars.keySet()) {
@@ -235,7 +351,8 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	    }
 	    log("    found context (" + source.getContext() + ") in rule for " + svars.get(source.getContext()) + " on source element " + source.getElement() + " to be called as " + source.getVariable());
 	    log("    Adding source var " + source.getVariable() + "-> " + svars.get(source.getContext()) + "." + source.getElement());
-	    svars.put(source.getVariable(),svars.get(source.getContext()) + "." + source.getElement());
+	    String sPath = svars.get(source.getContext()).replaceAll("\\.*$","");
+	    svars.put(source.getVariable(),sPath + "." + source.getElement());
 	}
 	
 	for (StructureMapGroupRuleTargetComponent target : rule.getTarget()) {
@@ -246,18 +363,20 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 		continue;
 	    }
 	    log("    found context (" + target.getContext() + ") in rule for " + tvars.get(target.getContext()) + " on target element " + target.getElement() );
+	    String tPath = tvars.get(target.getContext()).replaceAll("\\.$","");
 	    if (target.hasVariable()) {
-		log("    Adding source var " + target.getVariable() + "-> " + tvars.get(target.getContext()) + "." + target.getElement());
-		tvars.put(target.getVariable(),tvars.get(target.getContext()) + "." + target.getElement());
+		log("    Adding target var " + target.getVariable() + "-> " + tPath + "." + target.getElement());
+		tvars.put(target.getVariable(),tPath  + "." + target.getElement());
 	    }
 	    if (!target.hasTransform() ) {
 		continue;
 	    }
 	    log("    Found target var " + target.getContext() + "." + target.getElement() + " with tranform " + target.getTransform());
-	    String targetVar = tvars.get(target.getContext()) + "." + target.getElement();
-	    if (!tvars.containsValue(targetVar)) {
-		tvars.put(targetVar,targetVar);
-	    }
+	    log("    Found target var from context " + tvars.get(target.getContext()) );
+	    String targetVar = tPath + "." + target.getElement();
+	    log("tPath = " + tPath + " tVar = " + targetVar);
+	    tvars.put(target.getContext() + "." +  target.getElement(),targetVar );
+	    addTPort(targetVar);
 	    switch (target.getTransform()) {
 	    case TRANSLATE:		    
 	    case APPEND:
@@ -279,17 +398,19 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 			log("   source variable not found " + idType.asStringValue());
 			break;
 		    }
-		    log("      found source parameter for transform =" + idType.asStringValue());		
-		    arrows.add(svars.get(idType.asStringValue()) +  " --> " + targetVar + " : " + rule.getName() );
+		    log("      found source parameter for transform =" + idType.asStringValue());
+		    arrows.put(svars.get(idType.asStringValue()) , targetVar);
+		    addSPort(svars.get(idType.asStringValue()));
 		} else if (sourceParam.hasValueStringType()) {
 		    log("       found string value type");
 		    StringType stringType =  sourceParam.getValueStringType();
 		    String stringVal = stringType.asStringValue();
-		    String qStringVal = "\"\"" + stringVal + "\"\"";
+		    String qStringVal = "ValueString(\"" + stringVal + "\")";
 		    log("      found source string for transform =" + stringVal);
 		    // we want to indicate a constant value is mapped to the target
-		    arrows.add(qStringVal +  " --> " + targetVar + " : " + rule.getName() );
-		    svars.put(qStringVal,qStringVal); //make sure string value shows up in class UML definition
+		    arrows.put(qStringVal,targetVar);
+		    svars.put(qStringVal,qStringVal);
+		    addSPort(qStringVal);
 		}
 		break;
 	    case CREATE:
@@ -304,9 +425,12 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	    log("found dependants - need to add arrows");
 	    //todo: do this 
 	}
+	if (!recurse) {
+	    return;
+	}
 	for (StructureMapGroupRuleComponent r: rule.getRule()) {
 	    log("Walking down rule \"" + r.getName() + "\"");
-	    calculateArrows(r,svars,tvars,arrows);
+	    calculateArrows(r,svars,tvars,arrows,true);
 	}
     }
     
