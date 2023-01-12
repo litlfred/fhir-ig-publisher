@@ -4,9 +4,9 @@ package org.hl7.fhir.igtools.publisher;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.TreeHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 
 import org.hl7.fhir.exceptions.FHIRException;
@@ -102,7 +102,7 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
     
     //this UML rendering code doesn't belong here really.
     public Map<String,String> renderUML(StructureMap map) throws FHIRException  {
-	Map<String,String> diagrams = new TreeHashMap<String,String>();
+	Map<String,String> diagrams = new TreeMap<String,String>();
 	try {
 	    String umlSource
 		= "@startuml" + "\n" 
@@ -120,8 +120,8 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 
     protected String renderOverviewStructureMapUML(StructureMap map) throws FHIRException {
 	//maps are variable name to element path
-	Map<String,String> svars = new TreeHashMap<String,String>();
-	Map<String,String> tvars = new TreeHashMap<String,String>();
+	Map<String,String> svars = new TreeMap<String,String>();
+	Map<String,String> tvars = new TreeMap<String,String>();
 	StructureDefinition source = null;
 	StructureDefinition target = null;
 	StructureMapGroupComponent group = map.getGroupFirstRep();
@@ -192,7 +192,7 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 
 	
 
-	Map<String,String> arrows = new HashMap<String,String>();	
+	Map<String,List<String>> arrows = new HashMap<String,List<String>>();	
 	for (StructureMapGroupRuleComponent rule : group.getRule()) {
 	    log("looking for arrows under top level rule: \"" + rule.getName() + "\"");
 	    calculateArrows(rule,svars,tvars,arrows,true);
@@ -257,11 +257,13 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	    + "   ]\n";
 	
 	String arrowList = "";
-	for (String k: arrows.keySet()) {
-	    log("Adding arrow for " + k + " to " + arrows.get(k));
-	    arrowList
-		+= "   node" + dotSanatize(source.getName()) + ":" + getSPort(k)
-		+  " -> node" + dotSanatize(target.getName()) + ":" + getTPort(arrows.get(k)) + "\n";
+	for (String s: arrows.keySet()) {
+	    for (String t: arrows.get(s)) {	    
+		log("Adding arrow for " + s + " to " + t);
+		arrowList
+		    += "   node" + dotSanatize(source.getName()) + ":" + getSPort(s)
+		    +  " -> node" + dotSanatize(target.getName()) + ":" + getTPort(t) + "\n";
+	    }
 	}
 
 	String digraph  
@@ -328,7 +330,7 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
     }
 
     
-    protected void calculateArrows(StructureMapGroupRuleComponent rule, Map<String,String> svars, Map<String,String> tvars,Map<String,String> arrows, boolean recurse) {
+    protected void calculateArrows(StructureMapGroupRuleComponent rule, Map<String,String> svars, Map<String,String> tvars,Map<String,List<String>> arrows, boolean recurse) {
 	log("calculating arrows on rule \"" + rule.getName() + "\"");
 	String sout = "";
 	for (String s: svars.keySet()) {
@@ -399,7 +401,7 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 			break;
 		    }
 		    log("      found source parameter for transform =" + idType.asStringValue());
-		    arrows.put(svars.get(idType.asStringValue()) , targetVar);
+		    addArrow(svars.get(idType.asStringValue()) , targetVar,arrows);
 		    addSPort(svars.get(idType.asStringValue()));
 		} else if (sourceParam.hasValueStringType()) {
 		    log("       found string value type");
@@ -408,7 +410,7 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 		    String qStringVal = "ValueString(\"" + stringVal + "\")";
 		    log("      found source string for transform =" + stringVal);
 		    // we want to indicate a constant value is mapped to the target
-		    arrows.put(qStringVal,targetVar);
+		    addArrow(qStringVal,targetVar,arrows);
 		    svars.put(qStringVal,qStringVal);
 		    addSPort(qStringVal);
 		}
@@ -434,6 +436,14 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	}
     }
     
-	
+
+
+    protected void addArrow(String source,String target, Map<String,List<String>> arrows) {
+	if (!arrows.containsKey(source)) {
+	    arrows.put(source,new ArrayList<String>());
+	}
+	List<String> targets = arrows.get(source);
+	targets.add(target);
+    }
     
 }
