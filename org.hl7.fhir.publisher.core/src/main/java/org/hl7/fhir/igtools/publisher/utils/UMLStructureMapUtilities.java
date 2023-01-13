@@ -102,53 +102,22 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
     // TextFile.stringToFile(umlSource, umlFile);
     
     //this UML rendering code doesn't belong here really.
+
+
+    Map<String,String> svars;
+    Map<String,String> tvars;
+    protected Map<String,List<String>> dependents = new HashMap<String,List<String>>(); //too lazy to do this in the constructors, i suppose    
+    protected Map<String,List<String>> arrows = new HashMap<String,List<String>>();
+
+    protected void reset() {
+	svars = new TreeMap<String,String>();
+	tvars = new TreeMap<String,String>();
+	dependents = new HashMap<String,List<String>>();
+	arrows = new HashMap<String,List<String>>();
+    }
+    
     public Map<String,String> renderUML(StructureMap map) throws FHIRException  {
-	Map<String,String> diagrams = new TreeMap<String,String>();
-	try {
-	    String umlSource
-		= "@startuml" + "\n" 
-		+ " skinparam groupInheritance 2" + "\n"
-		+ renderOverviewStructureMapUML(map) + "\n"
-		+ "@enduml" + "\n";
-	    diagrams.put("overview",umlSource);
-	} catch (Exception e) {
-	    log("Unable to create uml for "  + map.getName() + ":" + e.toString());
-	}
-	return diagrams;
-    }
-
-
-
-    protected String renderFullStructureMapUML(StructureMap map) throws FHIRException {
-
-	// String dependentRules = "";
-	// for (String r: getDependentRules()) {
-	//     dependentRules 
-	// 	+= "    node" + dotSanatize(r) + " " + " [\n"
-	// 	+  "     shape=\"folder\"\n"
-	// 	+  "     label=\"" + r + "\"\n"
-	// 	+  "    ]\n";		
-	//     for (String p: getDependents(r)) {
-        //         log("adding rule " + r + " with dependent " + p);
-	// 	if (svars.containsKey(p)) {
-	// 	    arrowList
-	// 		+= "   node" + dotSanatize(source.getName()) + ":" + getSPort(svars.get(p)) + " -> node" + dotSanatize(r) + "\n";
-	// 	} else if (tvars.containsKey(p)) {
-	// 	    arrowList
-	// 		+= "   node" + dotSanatize(r)  + " -> node" + dotSanatize(target.getName()) + ":" + getTPort(tvars.get(p)) + " \n";
-	// 	} else {
-	// 	    log("Dependent rule " + r + " could not find variable " + p);
-	// 	}
-	//     }
-	// }
-	
-	return "";
-    }
-
-    protected String renderOverviewStructureMapUML(StructureMap map) throws FHIRException {
-	//maps are variable name to element path
-	Map<String,String> svars = new TreeMap<String,String>();
-	Map<String,String> tvars = new TreeMap<String,String>();
+	reset();
 	StructureDefinition source = null;
 	StructureDefinition target = null;
 	StructureMapGroupComponent group = map.getGroupFirstRep();
@@ -199,38 +168,84 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	}
 	log("done matching first group against structure");
 
-	if (source == null) {
-	    throw new FHIRException("Could not find source when generating UML for structure map:" + map.getName());
+
+	Map<String,String> diagrams = new TreeMap<String,String>();
+	
+	if (source != null && target != null) {
+	    for (StructureMapGroupRuleComponent rule : group.getRule()) {
+		log("looking for arrows under top level rule: \"" + rule.getName() + "\"");
+		calculateArrows(rule,svars,tvars);
+	    }
+	    try {
+		diagrams.put("overview",renderOverviewStructureMapUML(map,source,target) );
+		diagrams.put("full",renderFullStructureMapUML(map,source,target) );
+	    } catch (Exception e) {
+		log("Unable to create uml for "  + map.getName() + ":" + e.toString());
+	    }
 	}
-	if (target == null) {
-	    throw new FHIRException("Could not find target when generating UML for structure map:" + map.getName());
-	}
+	return diagrams;
+    }
+
+
+
+    protected String renderFullStructureMapUML(StructureMap map,StructureDefinition source,StructureDefinition target) throws FHIRException {
+
+	// String dependentRules = "";
+	// for (String r: getDependentRules()) {
+	//     dependentRules 
+	// 	+= "    node" + dotSanatize(r) + " " + " [\n"
+	// 	+  "     shape=\"folder\"\n"
+	// 	+  "     label=\"" + r + "\"\n"
+	// 	+  "    ]\n";		
+	//     for (String p: getDependents(r)) {
+        //         log("adding rule " + r + " with dependent " + p);
+	// 	if (svars.containsKey(p)) {
+	// 	    arrowList
+	// 		+= "   node" + dotSanatize(source.getName()) + ":" + getSPort(svars.get(p)) + " -> node" + dotSanatize(r) + "\n";
+	// 	} else if (tvars.containsKey(p)) {
+	// 	    arrowList
+	// 		+= "   node" + dotSanatize(r)  + " -> node" + dotSanatize(target.getName()) + ":" + getTPort(tvars.get(p)) + " \n";
+	// 	} else {
+	// 	    log("Dependent rule " + r + " could not find variable " + p);
+	// 	}
+	//     }
+	// }
+
+
+	// String digraph  
+	//     =  " digraph " + dotSanatize(map.getName()) + " {\n"
+	//     + "  subgraph cluster" + dotSanatize(map.getName()) + "{\n"
+	//     + "   label=<<font color=\"blue\">" + dotSanatize(map.getName()) + "</font>>\n"
+	//     + "   href=\"" + map.getUrl() + "\"\n"
+	//     + "   tooltip=\"" + map.getUrl() + "\"\n"
+	//     + "   labeloc=\"top\"\n"
+	//     + "   {rank = same; node" + dotSanatize(source.getName()) + ";" + dependentNodes + " node" + dotSanatize(target.getName()) + "; }\n"
+	//     +     sourceNode
+	//     +     targetNode
+        //     +     dependentRules
+	//     +     arrowList
+	//     + "  }\n"
+	//     + " }\n";
+	// log(digraph);
+
+	// return
+	//     "@startuml" + "\n" 
+	//     + " skinparam groupInheritance 2" + "\n"
+	//     +   digraph
+	//     + "@enduml" + "\n";
+	
+	return "";
+    }
+
+    protected String renderOverviewStructureMapUML(StructureMap map, StructureDefinition source,StructureDefinition target) throws FHIRException {
+	//maps are variable name to element path
 	
 	String sout = "";
-	for (String s: svars.keySet()) {
-	    sout += "\n     " + s + " -> " + svars.get(s) ;
-	}
-	log("Starting Source Vars=" + sout);
-	String tout = "";
-	for (String t: tvars.keySet()) {
-	    tout += "\n     " + t + " -> " + tvars.get(t) ;
-	}
-	log("Starting target Vars=" + tout);
-
-	
-	resetArrows();
-	resetDependents();
-	for (StructureMapGroupRuleComponent rule : group.getRule()) {
-	    log("looking for arrows under top level rule: \"" + rule.getName() + "\"");
-	    calculateArrows(rule,svars,tvars,true);
-	}
-
-	sout = "";
 	for (String s: svars.keySet()) {
 	    sout += "\n     " + s + "->" + svars.get(s) ;
 	}
 	log("  Source Vars=" + sout);
-	tout = "";
+	String tout = "";
 	for (String t: tvars.keySet()) {
 	    tout += "\n     " + t + "->" + tvars.get(t) ;
 	}
@@ -331,7 +346,12 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	    + "  }\n"
 	    + " }\n";
 	log(digraph);
-	return digraph;
+
+	return
+	    "@startuml" + "\n" 
+	    + " skinparam groupInheritance 2" + "\n"
+	    +   digraph
+	    + "@enduml" + "\n";
     }
 
   
@@ -383,7 +403,7 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
     }
 
     
-    protected void calculateArrows(StructureMapGroupRuleComponent rule, Map<String,String> svars, Map<String,String> tvars, boolean recurse) {
+    protected void calculateArrows(StructureMapGroupRuleComponent rule, Map<String,String> svars, Map<String,String> tvars) {
 	log("calculating arrows on rule \"" + rule.getName() + "\"");
 	String sout = "";
 	for (String s: svars.keySet()) {
@@ -456,16 +476,11 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 		    log("      found source parameter for transform =" + idType.asStringValue());
 		    addArrow(svars.get(idType.asStringValue()) , targetVar);
 		    addSPort(svars.get(idType.asStringValue()));
-		} else if (sourceParam.hasValueStringType()) {
-		    log("       found string value type");
-		    StringType stringType =  sourceParam.getValueStringType();
-		    String stringVal = stringType.asStringValue();
-		    String qStringVal = "ValueString(\"" + stringVal + "\")";
-		    log("      found source string for transform =" + stringVal);
-		    // we want to indicate a constant value is mapped to the target
-		    addArrow(qStringVal,targetVar);
-		    svars.put(qStringVal,qStringVal);
-		    addSPort(qStringVal);
+		} else {
+		    String constantVal = retrieveConstant(sourceParam);
+		    if (constantVal != null) {
+			addArrow(constantVal,targetVar);
+		    }
 		}
 		break;
 	    case CREATE:
@@ -495,34 +510,23 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 		    } else {
 			log("Could not find depdendent variable: " + id + " via " + paramName);
 		    }
-		} else if ( param.hasValueStringType()) {
-		    log("       found dependent string value type");
-		    StringType stringType =  param.getValueStringType();
-		    String stringVal = stringType.asStringValue();
-		    String qStringVal = "ValueString(\"" + stringVal + "\")";
-		    svars.put(qStringVal,qStringVal);
-		    addSPort(qStringVal);
-		    log("      found dependent string for transform =" + stringVal);
-		    addDependent(rule.getName(),qStringVal);
+		} else {
+		    String constantVal = retrieveConstant(param);
+		    if (constantVal != null ) {
+			addDependent(rule.getName(),constantVal);
+		    }
 		}
 	    }
 	}
-
 	
-	if (!recurse) {
-	    return;
-	}
 	for (StructureMapGroupRuleComponent r: rule.getRule()) {
 	    log("Walking down rule \"" + r.getName() + "\"");
-	    calculateArrows(r,svars,tvars,true);
+	    calculateArrows(r,svars,tvars);
 	}
     }
 
 
-    protected Map<String,List<String>> dependents = new HashMap<String,List<String>>(); //too lazy to do this in the constructors, i suppose
-    protected void resetDependents() {
-	dependents = new HashMap<String,List<String>>();
-    }
+
     protected List<String> getDependents(String dependent) {
 	if (!dependents.containsKey(dependent)) {
 	    dependents.put(dependent,new ArrayList<String>());
@@ -537,11 +541,6 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	return dependents.keySet();
     }
 
-    
-    protected Map<String,List<String>> arrows = new HashMap<String,List<String>>();
-    protected void resetArrows() {
-	arrows = new HashMap<String,List<String>>();
-    }   
     protected List<String> getArrows(String source) {
 	if (!arrows.containsKey(source)) {
 	    arrows.put(source, new ArrayList<String>());
@@ -559,5 +558,22 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	return arrows.keySet();
     }       
 
+
+    protected String retrieveConstant(StructureMapGroupRuleTargetParameterComponent param) {
+	String val = null;
+	if (param.hasValueStringType()) {
+	    log("       found string value type");
+	    StringType stringType =  param.getValueStringType();	    
+	    String stringVal = stringType.asStringValue();
+	    val = "ValueString(\"" + stringVal + "\")";
+	    log("      found source string for transform =" + stringVal);
+	    // we want to indicate a constant value is mapped to the target
+	}
+	if (val != null) {
+	    svars.put(val,val);
+	    addSPort(val);
+	}
+	return val;
+    }
     
 }
