@@ -106,14 +106,16 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 
     Map<String,String> svars;
     Map<String,String> tvars;
-    protected Map<String,List<String>> dependents = new HashMap<String,List<String>>(); //too lazy to do this in the constructors, i suppose    
-    protected Map<String,List<String>> arrows = new HashMap<String,List<String>>();
+    protected Map<String,List<String>> dependents = new HashMap<String,List<String>>(); //too lazy to do this in the constructors, i suppose
+    //              rule      source/target
+    protected Map<String,Map<String,List<String>>> arrows = new HashMap<String,Map<String,List<String>>>();
+    //             rule      source   target
 
     protected void reset() {
 	svars = new TreeMap<String,String>();
 	tvars = new TreeMap<String,String>();
 	dependents = new HashMap<String,List<String>>();
-	arrows = new HashMap<String,List<String>>();
+	arrows = new HashMap<String,Map<String,List<String>>>();
     }
     
     public Map<String,String> renderUML(StructureMap map) throws FHIRException  {
@@ -299,12 +301,15 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	    + "   ]\n";
 
 	String arrowList = "";
-	for (String s: getArrowSources()) {
-	    for (String t: getArrows(s)) {	    
-		log("Adding arrow for " + s + " to " + t);
-		arrowList
-		    += "   node" + dotSanatize(source.getName()) + ":" + getSPort(s)
-		    +  " -> node" + dotSanatize(target.getName()) + ":" + getTPort(t) + "\n";
+	
+	for (String r: getArrowRules()) {
+	    for (String s: getArrowSources(r)) {
+		for (String t: getArrows(r,s)) {	    
+		    log("Adding arrow for " + s + " to " + t);
+		    arrowList
+			+= "   node" + dotSanatize(source.getName()) + ":" + getSPort(s)
+			+  " -> node" + dotSanatize(target.getName()) + ":" + getTPort(t) + "\n";
+		}
 	    }
 	}
 
@@ -474,12 +479,12 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 			break;
 		    }
 		    log("      found source parameter for transform =" + idType.asStringValue());
-		    addArrow(svars.get(idType.asStringValue()) , targetVar);
+		    addArrow(rule.getName(), svars.get(idType.asStringValue()) , targetVar);
 		    addSPort(svars.get(idType.asStringValue()));
 		} else {
 		    String constantVal = retrieveConstant(sourceParam);
 		    if (constantVal != null) {
-			addArrow(constantVal,targetVar);
+			addArrow(rule.getName(),constantVal,targetVar);
 		    }
 		}
 		break;
@@ -541,22 +546,36 @@ public class UMLStructureMapUtilities extends StructureMapUtilities {
 	return dependents.keySet();
     }
 
-    protected List<String> getArrows(String source) {
-	if (!arrows.containsKey(source)) {
-	    arrows.put(source, new ArrayList<String>());
+
+
+    protected Map<String,List<String>> getArrows(String rule) {
+	if (!arrows.containsKey(rule)) {
+	    Map<String,List<String>> arrowList = new HashMap<String,List<String>>();
+	    arrows.put(rule,arrowList);
 	}
-	return arrows.get(source);
+	return arrows.get(rule);
     }
-    protected void addArrow(String source,String target) {
-	if (!arrows.containsKey(source)) {
-	    arrows.put(source,new ArrayList<String>());
+    
+    protected List<String> getArrows(String rule, String source) {
+	Map<String,List<String>> arrowList = getArrows(rule);
+	if (!arrowList.containsKey(source)) {
+	    arrowList.put(source, new ArrayList<String>());
 	}
-	List<String> targets = getArrows(source);
+	return arrowList.get(source);
+    }
+    protected void addArrow(String rule, String source,String target) {
+	List<String> targets = getArrows(rule,source);
 	targets.add(target);
     }
-    protected Set<String> getArrowSources() {
+
+
+    protected Set<String> getArrowSources(String rule) {
+	return getArrows(rule).keySet();
+    }
+    protected Set<String> getArrowRules() {
 	return arrows.keySet();
     }       
+
 
 
     protected String retrieveConstant(StructureMapGroupRuleTargetParameterComponent param) {
