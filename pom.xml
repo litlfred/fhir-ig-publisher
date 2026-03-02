@@ -24,9 +24,9 @@
     <version>1.2.27-SNAPSHOT</version> <!-- See the note above -->
 
     <properties>
-        <core_version>5.6.90-SNAPSHOT</core_version>
+        <core_version>6.4.0</core_version>
         <maven_surefire_version>3.0.0-M5</maven_surefire_version>
-        <apache_poi_version>4.1.1</apache_poi_version>
+        <apache_poi_version>5.4.0</apache_poi_version>
         <maven.compiler.release>11</maven.compiler.release>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
@@ -145,12 +145,12 @@
         <dependency>
             <groupId>org.fhir</groupId>
             <artifactId>ucum</artifactId>
-            <version>1.0.3</version>
+            <version>1.0.9</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.2.3</version>
+            <version>1.2.13</version>
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
@@ -165,7 +165,7 @@
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-compress</artifactId>
-            <version>1.21</version>
+            <version>1.26.0</version>
         </dependency>
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
@@ -236,7 +236,7 @@
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
-            <version>4.9.0</version>
+            <version>4.9.2</version>
         </dependency>
 
         <dependency>
