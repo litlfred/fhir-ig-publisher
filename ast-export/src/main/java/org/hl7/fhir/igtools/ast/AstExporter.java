@@ -55,7 +55,7 @@ public class AstExporter {
 
   /** One exported resource, as listed in the manifest. */
   public record Entry(String key, String canonical, String version, String resourceType, String id,
-      String file, String source) {
+      String name, String file, String source) {
   }
 
   /**
@@ -107,6 +107,7 @@ public class AstExporter {
       addOrNull(o, "version", e.version());
       o.add("resourceType", e.resourceType());
       o.add("id", e.id());
+      addOrNull(o, "name", e.name());
       o.add("file", e.file());
       addOrNull(o, "source", e.source());
       list.add(o);
@@ -171,11 +172,12 @@ public class AstExporter {
     Element e = r.getElement();
     String canonical = childValue(e, "url");
     String version = childValue(e, "version");
+    String name = childValue(e, "name");
     String rel = "resources/" + safe(type) + "/" + safe(id) + ".json";
     Path target = outDir.resolve(rel);
     Files.createDirectories(target.getParent());
     Files.write(target, composer.compose(r));
-    return new Entry(keyOf(type, id, canonical, version), canonical, version, type, id, rel, sourceOf(f));
+    return new Entry(keyOf(type, id, canonical, version), canonical, version, type, id, name, rel, sourceOf(f));
   }
 
   /** The file a resource came from, relative to the IG root when the fetcher recorded that. */

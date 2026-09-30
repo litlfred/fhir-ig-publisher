@@ -39,6 +39,13 @@ public class AstPublisher extends Publisher {
     String root = fields.rootDir();
     AstExporter exporter = new AstExporter(r -> composeJson(fields, r));
     exporter.export(getFileList(), outDir, header(fields, root), upstreamEdges(fields));
+    // SUSHI's own map from .fsh file to output resource, kept with the AST so
+    // a later delta can be mapped even for a file that has since been deleted.
+    Path fshIndex = Path.of(root, "fsh-generated", "fsh-index.json");
+    if (java.nio.file.Files.exists(fshIndex)) {
+      java.nio.file.Files.copy(fshIndex, outDir.resolve("fsh-index.json"),
+          java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
   }
 
   /**

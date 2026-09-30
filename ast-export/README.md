@@ -14,6 +14,7 @@ Runs one ordinary IG build, then writes what the build holds in memory:
 <ig>/output-ast/
   manifest.json                      # ig-ast/v1
   dependencies.json                  # ig-ast-dependencies/v1 (W2)
+  fsh-index.json                     # SUSHI's .fsh -> output map, kept for later deltas
   resources/<ResourceType>/<id>.json # one file per loaded resource
 ```
 
@@ -51,6 +52,35 @@ when the target is elsewhere, such as another package's FHIRHelpers. Unlike
 upstream, such an edge is **kept**. A dependency on another package is still
 a dependency, and dropping it makes a rebuild cone look smaller than it is.
 
+## Incremental plan (W5, W6)
+
+`AstPlanCli` takes a base AST and a delta (a commit range, a PR diff, or the
+staged index via `-staged`) and writes `ig-ast-plan/v1`. It **builds nothing**.
+
+```sh
+java -cp "target/classes:$(cat cp.txt)" org.hl7.fhir.igtools.ast.AstPlanCli \
+  -ast /path/to/ig/output-ast -ig /path/to/ig [-base <rev>] [-head <rev> | -staged] [-threshold 0.4]
+```
+
+1. **Files to resources.** A resource's own source, SUSHI's `fsh-index.json`
+   for `.fsh`, a `.cql` file to the Library of the same name, and, when
+   `fsh-cone` supplies them, a RuleSet file to the files that insert it.
+2. **Classification.** `RESOURCES`, `NEW_SOURCE`, `RENDER_ONLY` (`input/pagecontent/`
+   and similar) or `FULL_BUILD`. Build configuration, and any file whose effect
+   **cannot be determined**, forces a full build with the reason. "Cannot tell"
+   is never treated as incremental.
+3. **The cone.** `rebuild` is the forward cone: everything that depends on a
+   changed resource, transitively. `loadFromCache` is what the rebuilt set
+   depends on. A deleted file's resources are listed under `remove`, and their
+   dependents are rebuilt.
+4. **Decision.** `incremental`, or `full` with `fullBuildBecause`. A cone
+   above `-threshold` of the IG (default 40%) is a full build, because a full
+   build costs about the same and is simpler.
+
+**The cone is provisional until rebuilt.** It is computed on the base edges,
+and a rebuilt resource can gain edges the base did not have. W7 must
+recompute the cone after rebuilding and repeat until it stops growing.
+
 ## How it builds on the Publisher without changing it
 
 | piece | how |
@@ -77,5 +107,8 @@ java -cp "target/classes:$(cat cp.txt)" org.hl7.fhir.igtools.ast.AstExportCli -i
 
 W2's exit criterion, all 458 logic artefacts of smart-immunizations carrying
 their edges, has not been measured on a real build yet. The package registry
-was unreachable from the environment this was written in. W3: pinned dependency closure and terminology provenance. W4:
+was unreachable from the environment this was written in. W7: the rebuild itself. First choice: pack the `loadFromCache` part as a
+local NPM package and run the stock Publisher on a temporary IG holding only
+`rebuild`. W8: diff a full build against the incremental AST, and the
+threshold. W3: pinned dependency closure and terminology provenance. W4:
 page-fragment provenance.

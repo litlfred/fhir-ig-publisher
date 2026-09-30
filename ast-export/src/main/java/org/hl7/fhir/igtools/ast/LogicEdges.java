@@ -15,6 +15,8 @@ import org.hl7.fhir.r5.elementmodel.Element;
  * are not dispatched, so the part of an IG that changes most between
  * iterations has no edges. Filled here, beside it, rather than in it.
  *
+ * <p>Also, for every resource type, {@code meta.profile}.
+ *
  * <p>Unlike upstream, an edge whose target is NOT in this IG is kept and
  * marked unresolved: a dependency on another package is still a dependency,
  * and dropping it would make a rebuild cone look smaller than it is.
@@ -33,10 +35,36 @@ public final class LogicEdges {
 
   public static List<Edge> of(String resourceType, Element root) {
     List<Edge> out = new ArrayList<>();
-    if (root != null && TYPES.contains(resourceType)) {
+    if (root == null) {
+      return out;
+    }
+    // Any resource, logic or not: an example is validated against the
+    // profiles it claims, so a profile change must rebuild it. Upstream's
+    // analyser records no such edge.
+    Element meta = child(root, "meta");
+    if (meta != null && meta.hasChildren()) {
+      for (Element c : meta.getChildren()) {
+        if ("profile".equals(c.getName())) {
+          add(out, "meta.profile", c.getValue(), resourceType + ".meta.profile");
+        }
+      }
+    }
+    if (TYPES.contains(resourceType)) {
       walk(root, resourceType, out);
     }
     return out;
+  }
+
+  private static Element child(Element e, String name) {
+    if (!e.hasChildren()) {
+      return null;
+    }
+    for (Element c : e.getChildren()) {
+      if (name.equals(c.getName())) {
+        return c;
+      }
+    }
+    return null;
   }
 
   private static void walk(Element e, String path, List<Edge> out) {
