@@ -92,14 +92,22 @@ public class AstPublisher extends Publisher {
     h.add("ig", ig);
     JsonObject toolchain = Toolchain.describe(root);
     h.add("toolchain", toolchain);
-    h.add("inputs", inputs(root, toolchain));
+    JsonObject inputs = inputs(root, toolchain);
+    h.add("inputs", inputs);
+    if (!inputs.has("sourceRevision")) {
+      h.add("inputsUnknown", new JsonObject().add("sourceRevision", "the IG root is not a git checkout"));
+    }
     return h;
   }
 
   /**
-   * The inputs this build is valid for. Same shape as folio-assistant's
-   * {@code compiled} materialization inputs, so a consumer can run its
-   * staleness check on the manifest directly.
+   * The inputs this build is valid for — EXACTLY folio-assistant's
+   * {@code CompiledInputsSchema} ({@code folio-assistant-core/schemas/materialization.ts}),
+   * which is strict: {@code toolchain}, {@code sourceRevision}, and
+   * {@code inputDigest} as 64 lowercase hex characters, nothing else. A
+   * consumer runs its {@code compiledValidity} on this object unchanged.
+   * {@code sourceRevision} is OMITTED when unknown (the schema requires a
+   * non-empty string), and why is written beside the object by the caller.
    */
   static JsonObject inputs(String root, JsonObject toolchain) throws IOException {
     if (toolchain == null) {
@@ -110,11 +118,8 @@ public class AstPublisher extends Publisher {
     String rev = Toolchain.sourceRevision(root);
     if (rev != null) {
       inputs.add("sourceRevision", rev);
-    } else {
-      inputs.addNull("sourceRevision");
-      inputs.add("sourceRevisionUnknownBecause", "the IG root is not a git checkout");
     }
-    inputs.add("inputDigest", "sha256:" + InputDigest.of(Path.of(root)));
+    inputs.add("inputDigest", InputDigest.of(Path.of(root)));
     return inputs;
   }
 

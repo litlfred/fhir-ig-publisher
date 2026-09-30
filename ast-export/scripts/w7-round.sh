@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# W7's first real round: after run-real-igs.sh has built smart-immunizations,
+# W7's first real round, run by an agent or a person, not by CI: after
+# run-real-igs.sh has built smart-immunizations,
 # change ONE file, plan the delta, and run the incremental rebuild against the
 # base AST. Every step prints what it did; nothing here is assumed to work.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="$(cd "${1:?work dir}" && pwd)"
+WORK="$(cd "${1:?usage: w7-round.sh <work-dir used by run-real-igs.sh>}" && pwd)"
 IG="$WORK/smart-immunizations"
 BASE="$IG/output-ast"
 CP="$HERE/target/classes:$(cat "$WORK/cp.txt")"

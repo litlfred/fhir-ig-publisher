@@ -22,9 +22,14 @@ Runs one ordinary IG build, then writes what the build holds in memory:
   has no canonical;
 - `toolchain` records the publisher, core, SUSHI and Java versions; a value
   that cannot be determined is `null` **with the reason beside it**;
-- `inputs` carries `toolchain`, `sourceRevision` (the IG's git commit) and
-  `inputDigest` (sha256 over `sushi-config.yaml`, `ig.ini` and `input/`), so a
-  consumer can tell whether a cached AST was built from the source it has now.
+- `inputs` is **exactly** folio-assistant's strict `CompiledInputsSchema`:
+  - `toolchain`;
+  - `sourceRevision`, the IG's git commit, omitted when unknown, with the reason
+    in `inputsUnknown`;
+  - `inputDigest`, a sha256 over `sushi-config.yaml`, `ig.ini` and `input/`,
+    written as 64 lowercase hex characters.
+
+  A consumer runs its `compiledValidity` staleness check on it unchanged.
 
 **An AST is a cache, never an authority.** The manifest says
 `"authority": "cache"` and lists what is `provisional` until a full Publisher
@@ -133,10 +138,18 @@ The snapshot is taken **after** the build, so resources carry the narratives
 the build generated. A snapshot before rendering would need a hook upstream
 does not expose.
 
+## Scripts are the tools; CI calls them, never re-implements them
+
+`scripts/run-real-igs.sh` (W1/W2 measurements) and `scripts/w7-round.sh` (one
+incremental round) are what an agent or a person runs. Owner, 2026-09-30:
+**no GitHub Actions for now**, and if CI is ever added it **calls these same
+scripts**. It holds no logic of its own, so a CI result and a local result
+are the same measurement.
+
 ## Run on real IGs, one command
 
 ```sh
-ast-export/run-real-igs.sh [work-dir] [--byte-identical]
+ast-export/scripts/run-real-igs.sh [work-dir] [--byte-identical]
 ```
 
 The script checks the tools and the network, then runs the unit tests. It

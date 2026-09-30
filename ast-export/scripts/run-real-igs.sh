@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the AST export on real IGs and print the W1/W2 measurements.
 #
-#   ast-export/run-real-igs.sh [work-dir] [--byte-identical]
+#   ast-export/scripts/run-real-igs.sh [work-dir] [--byte-identical]
 #
 # work-dir defaults to ../../ast-real-igs (beside this checkout). Needs network
 # to packages.fhir.org, packages2.fhir.org and tx.fhir.org, plus: JDK 17+,
@@ -9,7 +9,7 @@
 # python3. Nothing is written outside work-dir except the FHIR package cache.
 set -euo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="${1:-$HERE/../../ast-real-igs}"
 BYTE=0
 for a in "$@"; do [ "$a" = "--byte-identical" ] && BYTE=1; done
