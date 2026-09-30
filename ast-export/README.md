@@ -161,6 +161,36 @@ This library **produces** ASTs. Reading, checking and showing them is done in
   full build.
 - `fsh-cone --file-users` writes the `-fsh-users` input for `AstPlanCli`.
 
+## Without packages.fhir.org: seed the cache from npm, exact versions only
+
+```sh
+ast-export/scripts/seed-fhir-cache-from-npm.py [--cache DIR] [--sushi-config FILE] [--dry-run] [name#version ...]
+```
+
+Owner, 2026-09-30: the npm account **`grahamegrieve`** (Grahame Grieve, who
+founded HL7 FHIR and maintains the IG Publisher) is a **trusted** publisher of
+FHIR packages. It is the trust anchor, and nothing else is.
+
+- **Exact versions only.** A pinned version is never satisfied by another:
+  different content would make a build measure something else while looking
+  like the real thing.
+- A tarball is accepted only when its npm maintainers include `grahamegrieve`,
+  and only after its published sha512 `integrity` verifies. npm's
+  `0.0.1-security` malicious-package placeholder is refused. The unscoped name
+  is tried first, then `@hl7/<name>`: the core packages are under the scope.
+- Dependencies are followed through each package's own `package.json`. A
+  version such as `current` or a range is **reported, never guessed**.
+- Writes the cache layout SUSHI and the Publisher read, and
+  `ast-export-npm-provenance.json` recording each package's tarball,
+  integrity and maintainers. Exit 1 lists everything missing.
+
+**Measured 2026-09-30: the mirror is not complete for the WHO IGs.** It
+mostly holds the latest version of each package. For smart-trust, 10 of the
+30 exact versions in the transitive closure are available. smart-immunizations
+also needs `who.template.root#current`, which is not on npm at all. So the
+seeder helps where the pinned versions are the latest ones. It does **not** make
+a faithful build of either WHO IG possible without packages.fhir.org.
+
 ## Scripts are the tools; CI calls them, never re-implements them
 
 `scripts/run-real-igs.sh` (W1/W2 measurements) and `scripts/w7-round.sh` (one
