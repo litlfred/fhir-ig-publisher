@@ -133,6 +133,24 @@ The snapshot is taken **after** the build, so resources carry the narratives
 the build generated. A snapshot before rendering would need a hook upstream
 does not expose.
 
+## Run on real IGs, one command
+
+```sh
+ast-export/run-real-igs.sh [work-dir] [--byte-identical]
+```
+
+The script checks the tools and the network, then runs the unit tests. It
+then builds `WorldHealthOrganization/smart-trust` and `smart-immunizations`
+through `AstExportCli` and prints the measurements:
+
+- resource and edge counts;
+- how many sources sit under `fsh-generated/resources/`;
+- **W2 per resource type** against 458 of 458;
+- edges that point outside the IG.
+
+`--byte-identical` also builds smart-trust with the stock Publisher and diffs
+the two `output/` trees.
+
 ## Run
 
 ```sh
