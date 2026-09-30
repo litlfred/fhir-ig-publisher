@@ -19,7 +19,7 @@ public class AstPlanCli {
     String ast = AstExportCli.param(args, "-ast");
     String ig = AstExportCli.param(args, "-ig");
     if (ast == null || ig == null) {
-      System.err.println("usage: AstPlanCli -ast <dir> -ig <dir> [-base <rev>] [-head <rev> | -staged] [-threshold 0.4] [-out plan.json]");
+      System.err.println("usage: AstPlanCli -ast <dir> -ig <dir> [-base <rev>] [-head <rev> | -staged] [-threshold 0.4] [-out plan.json] [-fsh-users fsh-file-users.json]");
       System.exit(2);
     }
     String base = AstExportCli.param(args, "-base");
@@ -40,7 +40,9 @@ public class AstPlanCli {
     String t = AstExportCli.param(args, "-threshold");
     double threshold = t == null ? IncrementalPlan.DEFAULT_THRESHOLD : Double.parseDouble(t);
     List<AstDelta.Change> delta = AstDelta.fromGit(ig, base, head);
-    JsonObject plan = new IncrementalPlan(Path.of(ast), null).plan(delta, threshold);
+    String fu = AstExportCli.param(args, "-fsh-users");
+    JsonObject plan = new IncrementalPlan(Path.of(ast), fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)))
+        .plan(delta, threshold);
     plan.add("base", base);
     plan.add("head", head == null ? "(staged)" : head);
     String json = JsonParser.compose(plan, true);

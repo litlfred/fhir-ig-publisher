@@ -95,4 +95,23 @@ class AstExporterTest {
     Files.move(ig.resolve("input/fsh/a.fsh"), ig.resolve("input/fsh/b.fsh"));
     assertNotEquals(d0, InputDigest.of(ig), "a rename changes the digest");
   }
+
+  /**
+   * The golden vector folio-assistant's TypeScript twin
+   * ({@code fhir-harness/scripts/ig-ast.ts}, {@code inputDigest}) asserts too.
+   * Change the algorithm here and that test fails, which is the point: the
+   * writer and the staleness checker are in different languages.
+   */
+  @Test
+  void inputDigestGoldenVectorSharedWithFolioAssistant(@TempDir Path ig) throws Exception {
+    Files.createDirectories(ig.resolve("input/fsh"));
+    Files.createDirectories(ig.resolve("input/pagecontent"));
+    Files.createDirectories(ig.resolve("output"));
+    Files.writeString(ig.resolve("sushi-config.yaml"), "id: x\n");
+    Files.writeString(ig.resolve("ig.ini"), "[IG]\nig = fsh-generated/resources/ImplementationGuide-x.json\n");
+    Files.writeString(ig.resolve("input/fsh/a.fsh"), "Profile: A\n");
+    Files.writeString(ig.resolve("input/pagecontent/index.md"), "# Hi\n");
+    Files.writeString(ig.resolve("output/x.html"), "noise");
+    assertEquals("58871352384745e1d7fd68f7ea918b0e2febbd86cf36a9cb5f0c7ce9d13a82f1", InputDigest.of(ig));
+  }
 }

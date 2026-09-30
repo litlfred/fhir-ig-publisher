@@ -100,6 +100,29 @@ public final class IncrementalPlan {
     }
   }
 
+  /**
+   * Reads {@code fsh-file-users/v1}, written by folio-assistant's
+   * {@code fsh-cone --file-users}: for each FSH file, the files that use
+   * what it declares. This is how a changed RuleSet- or Alias-only file,
+   * which declares no resource, reaches the resources it affects.
+   */
+  public static Map<String, Set<String>> readFshUsers(Path file) throws IOException {
+    JsonObject o = JsonParser.parseObject(Files.readString(file));
+    if (!"fsh-file-users/v1".equals(o.asString("$schema"))) {
+      throw new IOException(file + " is not fsh-file-users/v1");
+    }
+    Map<String, Set<String>> out = new HashMap<>();
+    JsonObject users = o.getJsonObject("users");
+    for (String f : users.getNames()) {
+      Set<String> us = new TreeSet<>();
+      for (JsonElement je : users.getJsonArray(f)) {
+        us.add(je.asString());
+      }
+      out.put(norm(f), us);
+    }
+    return out;
+  }
+
   /** Classifies one changed file. Package-visible for tests. */
   FileResult classify(AstDelta.Change c) {
     String path = norm(c.path());

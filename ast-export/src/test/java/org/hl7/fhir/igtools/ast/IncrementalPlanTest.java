@@ -156,4 +156,22 @@ class IncrementalPlanTest {
     assertEquals("full", p.asString("decision"), "4 of 14 resources is 28.6%, above 20%");
     assertTrue(list(p, "fullBuildBecause").get(0).contains("threshold"));
   }
+
+  @Test
+  void fshConeFileUsersAreReadInTheFormatFolioAssistantWrites() throws Exception {
+    Path f = ast.resolve("users.json");
+    Files.writeString(f, """
+        {
+          "$schema": "fsh-file-users/v1",
+          "root": "/tmp/ig",
+          "users": {
+            "input/fsh/rulesets.fsh": ["input/fsh/logic/PD.fsh"]
+          }
+        }
+        """);
+    JsonObject p = new IncrementalPlan(ast, IncrementalPlan.readFshUsers(f))
+        .plan(AstDelta.parseNameStatus("M\tinput/fsh/rulesets.fsh"), 0.4);
+    assertEquals("incremental", p.asString("decision"));
+    assertEquals(List.of(PD), list(p, "seeds"));
+  }
 }

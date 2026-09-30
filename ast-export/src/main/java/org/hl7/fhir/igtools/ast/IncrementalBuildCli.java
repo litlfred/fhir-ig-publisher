@@ -62,7 +62,9 @@ public class IncrementalBuildCli {
     boolean staged = AstExportCli.has(args, "-staged");
     String head = staged ? null : orElse(AstExportCli.param(args, "-head"), "HEAD");
     List<AstDelta.Change> delta = AstDelta.fromGit(ig.toString(), baseRev, head);
-    JsonObject plan = new IncrementalPlan(baseAst, null).plan(delta, threshold);
+    String fu = AstExportCli.param(args, "-fsh-users");
+    JsonObject plan = new IncrementalPlan(baseAst, fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)))
+        .plan(delta, threshold);
     Files.createDirectories(work);
     Files.writeString(work.resolve("plan.json"), JsonParser.compose(plan, true));
 

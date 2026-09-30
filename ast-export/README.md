@@ -64,12 +64,16 @@ staged index via `-staged`) and writes `ig-ast-plan/v1`. It **builds nothing**.
 
 ```sh
 java -cp "target/classes:$(cat cp.txt)" org.hl7.fhir.igtools.ast.AstPlanCli \
-  -ast /path/to/ig/output-ast -ig /path/to/ig [-base <rev>] [-head <rev> | -staged] [-threshold 0.4]
+  -ast /path/to/ig/output-ast -ig /path/to/ig [-base <rev>] [-head <rev> | -staged] [-threshold 0.4] [-fsh-users <json>]
 ```
 
 1. **Files to resources.** A resource's own source, SUSHI's `fsh-index.json`
-   for `.fsh`, a `.cql` file to the Library of the same name, and, when
-   `fsh-cone` supplies them, a RuleSet file to the files that insert it.
+   for `.fsh`, a `.cql` file to the Library of the same name, and a RuleSet or
+   Alias file to the files that use it. The last comes from `-fsh-users <json>`,
+   written by folio-assistant's
+   `bun run cat-harness/content/pipeline/fsh-cone.ts <ig> --file-users <json>`
+   (`fsh-file-users/v1`). Without it, a changed RuleSet-only file forces a full
+   build.
 2. **Classification.** `RESOURCES`, `NEW_SOURCE`, `RENDER_ONLY` (`input/pagecontent/`
    and similar) or `FULL_BUILD`. Build configuration, and any file whose effect
    **cannot be determined**, forces a full build with the reason. "Cannot tell"
