@@ -142,6 +142,25 @@ The snapshot is taken **after** the build, so resources carry the narratives
 the build generated. A snapshot before rendering would need a hook upstream
 does not expose.
 
+## The consumer half lives in folio-assistant
+
+This library **produces** ASTs. Reading, checking and showing them is done in
+`litlfred/folio-assistant`, under `fhir-harness/`:
+
+- `scripts/ig-ast.ts`:
+  - `list`;
+  - `validity`: `compiledValidity` on `inputs`, with the input digest recomputed
+    by the same algorithm; a golden vector is asserted in both test suites;
+  - `diff`: resources and edges, with an element-level differential;
+  - `render`: just-the-docs pages, each opening with the provisional mark.
+- The skill `fhir-ig-base/ig-ast-delta`, and the six Tools declared in
+  `fhir-harness/tools/index.ts`.
+- `cat-harness/processes/ig-ast-delta-review.bpmn`, the review step of an
+  incremental build: check validity, diff and render, then "every difference
+  explained?". An unexplained difference is a missed coupling and ends in a
+  full build.
+- `fsh-cone --file-users` writes the `-fsh-users` input for `AstPlanCli`.
+
 ## Scripts are the tools; CI calls them, never re-implements them
 
 `scripts/run-real-igs.sh` (W1/W2 measurements) and `scripts/w7-round.sh` (one
