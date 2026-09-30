@@ -38,6 +38,7 @@ class IncrementalPlanTest {
   @TempDir
   Path ast;
 
+
   static FetchedResource fromFsh(String type, String id, Element root) {
     FetchedFile f = new FetchedFile("fsh-generated/resources/" + type + "-" + id + ".json");
     f.setRelativePath("fsh-generated/resources/" + type + "-" + id + ".json");

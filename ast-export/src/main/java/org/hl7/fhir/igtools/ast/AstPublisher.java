@@ -92,8 +92,19 @@ public class AstPublisher extends Publisher {
     h.add("ig", ig);
     JsonObject toolchain = Toolchain.describe(root);
     h.add("toolchain", toolchain);
-    // Same shape as folio-assistant's `compiled` materialization inputs, so
-    // a consumer can run its staleness check on this manifest directly.
+    h.add("inputs", inputs(root, toolchain));
+    return h;
+  }
+
+  /**
+   * The inputs this build is valid for. Same shape as folio-assistant's
+   * {@code compiled} materialization inputs, so a consumer can run its
+   * staleness check on the manifest directly.
+   */
+  static JsonObject inputs(String root, JsonObject toolchain) throws IOException {
+    if (toolchain == null) {
+      toolchain = Toolchain.describe(root);
+    }
     JsonObject inputs = new JsonObject();
     inputs.add("toolchain", "ig-publisher " + toolchain.asString("publisher") + " / core " + toolchain.asString("core"));
     String rev = Toolchain.sourceRevision(root);
@@ -104,8 +115,7 @@ public class AstPublisher extends Publisher {
       inputs.add("sourceRevisionUnknownBecause", "the IG root is not a git checkout");
     }
     inputs.add("inputDigest", "sha256:" + InputDigest.of(Path.of(root)));
-    h.add("inputs", inputs);
-    return h;
+    return inputs;
   }
 
   static byte[] composeJson(AstFieldsAccess fields, FetchedResource r) throws IOException {

@@ -81,6 +81,45 @@ java -cp "target/classes:$(cat cp.txt)" org.hl7.fhir.igtools.ast.AstPlanCli \
 and a rebuilt resource can gain edges the base did not have. W7 must
 recompute the cone after rebuilding and repeat until it stops growing.
 
+## Incremental rebuild (W7), UNTESTED END TO END
+
+`IncrementalBuildCli -ast <base> -ig <dir> -out <dir> [-head <rev> | -staged] [-cache-folder <dir>]`
+
+1. Plan the delta (above). A `full` decision runs one ordinary build.
+2. Run SUSHI on the real IG, so `fsh-generated/` matches head.
+3. **`CachePackageWriter`** writes every resource not being rebuilt as an
+   ordinary FHIR package, `<IG packageId>.ast-cache#0.0.0-ast.<base>.r<round>`,
+   directly into the package cache folder. The stock Publisher then loads the
+   cached part as a dependency, which it already knows how to do.
+4. **`TempIgAssembler`** builds a temporary IG with only the rebuild set's
+   sources (and a rebuilt Library's `.cql`). Its ImplementationGuide lists only
+   those resources, gains `dependsOn` the cache package, and has one stub page:
+   the result is an AST, not a site.
+5. The stock Publisher builds that IG (`-no-sushi`), and its AST is exported.
+6. **`AstMerger`** merges it into the base as a **mixed-provenance** AST:
+   every resource carries `builtAt`, and the manifest carries `mixed: true` and
+   `incremental.{base, head, rebuilt, kept, removed}`. Edges are re-resolved
+   against the merged set.
+7. **Fixed point.** If the merged graph's cone reaches resources that were not
+   rebuilt, they are rebuilt next round. `-max-rounds` (default 3), then give
+   up and ask for a full build.
+
+Each piece has unit tests. **The loop has never run against a real
+Publisher**: the package registry was unreachable where this was written.
+Risks to check first:
+
+- **Canonical collision.** The cache package and the temporary IG share the
+  IG's canonical base. The Publisher may object to a dependency that
+  publishes into its own canonical space.
+- **References to the IG's own pages or resources** that the cut-down IG no
+  longer has, from narratives or `definition.grouping`.
+- **CQL includes.** `CqlSubSystem` must find a cached Library's CQL source
+  inside the cache package, rather than in `input/cql/`.
+- **A temporary IG entry that is not `Type-id.json`**, such as a hand-written
+  resource under `input/`, does not match `definition.resource`'s reference.
+- The package cache default is `~/.fhir/packages`. Pass `-cache-folder` to
+  keep the `*.ast-cache` packages out of it.
+
 ## How it builds on the Publisher without changing it
 
 | piece | how |
@@ -107,8 +146,6 @@ java -cp "target/classes:$(cat cp.txt)" org.hl7.fhir.igtools.ast.AstExportCli -i
 
 W2's exit criterion, all 458 logic artefacts of smart-immunizations carrying
 their edges, has not been measured on a real build yet. The package registry
-was unreachable from the environment this was written in. W7: the rebuild itself. First choice: pack the `loadFromCache` part as a
-local NPM package and run the stock Publisher on a temporary IG holding only
-`rebuild`. W8: diff a full build against the incremental AST, and the
+was unreachable from the environment this was written in. W7 end-to-end run. W8: diff a full build against the incremental AST, and the
 threshold. W3: pinned dependency closure and terminology provenance. W4:
 page-fragment provenance.
