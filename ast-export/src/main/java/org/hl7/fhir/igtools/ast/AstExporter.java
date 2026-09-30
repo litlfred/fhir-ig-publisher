@@ -5,7 +5,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.hl7.fhir.igtools.publisher.FetchedFile;
 import org.hl7.fhir.igtools.publisher.FetchedResource;
@@ -42,6 +44,15 @@ public class AstExporter {
     this.composer = composer;
   }
 
+  /**
+   * One dependency edge, from an exported resource to a canonical.
+   * {@code origin} says which analyser claimed it — {@code publisher} for
+   * upstream's DependencyAnalyser, {@code ast-export} for {@link LogicEdges}.
+   */
+  public record EdgeRow(String source, String kind, String target, String targetVersion, String path,
+      String origin) {
+  }
+
   /** One exported resource, as listed in the manifest. */
   public record Entry(String key, String canonical, String version, String resourceType, String id,
       String file, String source) {
@@ -54,12 +65,27 @@ public class AstExporter {
    * @return the entries written, in manifest order
    */
   public List<Entry> export(List<FetchedFile> files, Path outDir, JsonObject header) throws IOException {
+    return export(files, outDir, header, List.of());
+  }
+
+  /**
+   * @param upstreamEdges edges another analyser already found (upstream's
+   *                      DependencyAnalyser), written beside this library's own
+   */
+  public List<Entry> export(List<FetchedFile> files, Path outDir, JsonObject header, List<EdgeRow> upstreamEdges)
+      throws IOException {
     List<Entry> entries = new ArrayList<>();
+    List<EdgeRow> edges = new ArrayList<>(upstreamEdges);
     for (FetchedFile f : files) {
       for (FetchedResource r : f.getResources()) {
-        entries.add(write(f, r, outDir));
+        Entry entry = write(f, r, outDir);
+        entries.add(entry);
+        for (LogicEdges.Edge e : LogicEdges.of(entry.resourceType(), r.getElement())) {
+          edges.add(new EdgeRow(entry.key(), e.kind(), e.target(), e.targetVersion(), e.path(), "ast-export"));
+        }
       }
     }
+    writeDependencies(entries, edges, outDir);
     entries.sort(Comparator.comparing(Entry::key).thenComparing(Entry::file));
     JsonObject manifest = new JsonObject();
     manifest.add("$schema", SCHEMA);
@@ -89,6 +115,54 @@ public class AstExporter {
     Files.createDirectories(outDir);
     Files.writeString(outDir.resolve("manifest.json"), JsonParser.compose(manifest, true));
     return entries;
+  }
+
+  /**
+   * dependencies.json: every edge, with {@code resolved} naming the exported
+   * resource it lands on, or null when the target is outside this IG. An
+   * unresolved edge is kept — see {@link LogicEdges}.
+   */
+  static void writeDependencies(List<Entry> entries, List<EdgeRow> edges, Path outDir) throws IOException {
+    Map<String, String> byCanonical = new HashMap<>();
+    for (Entry e : entries) {
+      if (e.canonical() != null) {
+        byCanonical.putIfAbsent(e.canonical(), e.key());
+        if (e.version() != null) {
+          byCanonical.put(e.canonical() + "|" + e.version(), e.key());
+        }
+      }
+    }
+    List<EdgeRow> sorted = new ArrayList<>(edges);
+    sorted.sort(Comparator.comparing(EdgeRow::source).thenComparing(EdgeRow::kind).thenComparing(EdgeRow::target)
+        .thenComparing(r -> r.path() == null ? "" : r.path()));
+    JsonArray list = new JsonArray();
+    int resolved = 0;
+    for (EdgeRow r : sorted) {
+      JsonObject o = new JsonObject();
+      o.add("source", r.source());
+      o.add("kind", r.kind());
+      o.add("target", r.target());
+      addOrNull(o, "targetVersion", r.targetVersion());
+      String hit = r.targetVersion() != null ? byCanonical.get(r.target() + "|" + r.targetVersion()) : null;
+      if (hit == null) {
+        hit = byCanonical.get(r.target());
+      }
+      addOrNull(o, "resolved", hit);
+      if (hit != null) {
+        resolved++;
+      }
+      addOrNull(o, "path", r.path());
+      o.add("origin", r.origin());
+      list.add(o);
+    }
+    JsonObject doc = new JsonObject();
+    doc.add("$schema", "ig-ast-dependencies/v1");
+    doc.add("authority", "cache");
+    doc.add("edges", list.size());
+    doc.add("resolvedInIg", resolved);
+    doc.add("dependencies", list);
+    Files.createDirectories(outDir);
+    Files.writeString(outDir.resolve("dependencies.json"), JsonParser.compose(doc, true));
   }
 
   private Entry write(FetchedFile f, FetchedResource r, Path outDir) throws IOException {

@@ -13,6 +13,7 @@ Runs one ordinary IG build, then writes what the build holds in memory:
 ```
 <ig>/output-ast/
   manifest.json                      # ig-ast/v1
+  dependencies.json                  # ig-ast-dependencies/v1 (W2)
   resources/<ResourceType>/<id>.json # one file per loaded resource
 ```
 
@@ -31,6 +32,24 @@ carry that mark to the reader.
 
 The Publisher's `output/` is untouched: the AST is written to `-ast-out`,
 default `<ig>/output-ast`, after the build finishes.
+
+## Dependency edges (W2)
+
+`dependencies.json` lists every edge with `source` (a resource key), `kind`,
+`target`, `targetVersion`, `resolved` and `origin`:
+
+- **`origin: publisher`**: upstream's own `DependencyAnalyser`, reused
+  unchanged, which covers terminology and conformance resources;
+- **`origin: ast-export`**: `LogicEdges`, the gap upstream leaves, covering
+  Library (`relatedArtifact` depends-on / composed-of,
+  `dataRequirement.codeFilter.valueSet`), PlanDefinition and ActivityDefinition
+  (`library`, `action.definitionCanonical`, nested actions included), and Measure
+  (`library`).
+
+`resolved` names the resource in THIS IG that the edge lands on, or `null`
+when the target is elsewhere, such as another package's FHIRHelpers. Unlike
+upstream, such an edge is **kept**. A dependency on another package is still
+a dependency, and dropping it makes a rebuild cone look smaller than it is.
 
 ## How it builds on the Publisher without changing it
 
@@ -56,7 +75,7 @@ java -cp "target/classes:$(cat cp.txt)" org.hl7.fhir.igtools.ast.AstExportCli -i
 
 ## Not yet
 
-W2: dependency edges among Library, PlanDefinition and Measure (upstream's
-`DependencyAnalyser` has empty `analysePD`/`analyseAD` and no Library/Measure
-dispatch). W3: pinned dependency closure and terminology provenance. W4:
+W2's exit criterion, all 458 logic artefacts of smart-immunizations carrying
+their edges, has not been measured on a real build yet. The package registry
+was unreachable from the environment this was written in. W3: pinned dependency closure and terminology provenance. W4:
 page-fragment provenance.
