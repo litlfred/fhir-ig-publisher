@@ -161,35 +161,38 @@ This library **produces** ASTs. Reading, checking and showing them is done in
   full build.
 - `fsh-cone --file-users` writes the `-fsh-users` input for `AstPlanCli`.
 
-## Without packages.fhir.org: seed the cache from npm, exact versions only
+## Without packages.fhir.org: seeding the cache from trusted sources
 
 ```sh
-ast-export/scripts/seed-fhir-cache-from-npm.py [--cache DIR] [--sushi-config FILE] [--dry-run] [name#version ...]
+ast-export/scripts/seed-fhir-cache-from-npm.py [--cache DIR] [--sushi-config FILE] [--mirror DIR|GIT-URL]
+    [--template-repo NAME=OWNER/REPO] [--missing-out FILE] [--dry-run] [name#version ...]
+ast-export/scripts/mirror-fhir-packages.sh <mirror-repo-dir> <missing.txt | name#version ...>   # on a machine WITH packages.fhir.org
 ```
 
-Owner, 2026-09-30: the npm account **`grahamegrieve`** (Grahame Grieve, who
-founded HL7 FHIR and maintains the IG Publisher) is a **trusted** publisher of
-FHIR packages. It is the trust anchor, and nothing else is.
+Sources, in order. Each is a trust anchor named by the owner or by the
+package's own publisher:
 
-- **Exact versions only.** A pinned version is never satisfied by another:
-  different content would make a build measure something else while looking
-  like the real thing.
-- A tarball is accepted only when its npm maintainers include `grahamegrieve`,
-  and only after its published sha512 `integrity` verifies. npm's
-  `0.0.1-security` malicious-package placeholder is refused. The unscoped name
-  is tried first, then `@hl7/<name>`: the core packages are under the scope.
-- Dependencies are followed through each package's own `package.json`. A
-  version such as `current` or a range is **reported, never guessed**.
-- Writes the cache layout SUSHI and the Publisher read, and
-  `ast-export-npm-provenance.json` recording each package's tarball,
-  integrity and maintainers. Exit 1 lists everything missing.
+| source | covers | integrity |
+|---|---|---|
+| npm, account **`grahamegrieve`** (owner: trusted; he founded HL7 FHIR) | mostly the latest version of each HL7 package; the core packages under `@hl7/` | npm's published sha512 |
+| the publisher's own site repo: `WorldHealthOrganization/smart-html`, `IHE/publications` | every released WHO `smart.who.int.*` and IHE version | the tarball's own `package.json` must name the exact package and version; sha512 recorded |
+| a template's own repo at HEAD, found through `FHIR/ig-registry/templates.json`, or `--template-repo` for one the registry does not list (`who.template.root`) | templates, including `#current` | the commit is recorded. Owner: `fhir.base.template` is trusted |
+| `--mirror`, filled by `mirror-fhir-packages.sh` | everything else, typically the pinned HL7 versions | as for site repos; the person who ran the mirror is the trust anchor |
 
-**Measured 2026-09-30: the mirror is not complete for the WHO IGs.** It
-mostly holds the latest version of each package. For smart-trust, 10 of the
-30 exact versions in the transitive closure are available. smart-immunizations
-also needs `who.template.root#current`, which is not on npm at all. So the
-seeder helps where the pinned versions are the latest ones. It does **not** make
-a faithful build of either WHO IG possible without packages.fhir.org.
+**Nothing is computed once and kept** (owner, 2026-10-01: *"dynamically load
+from repos... dont calc once and assume fixed. avoid drift"*). The template
+registry, the IHE folder listing and any mirror clone are read fresh on every
+run, in a scratch directory deleted at exit.
+
+**Exact versions only**, with one rule copied from the Publisher: a patch
+wildcard (`1.1.x`) resolves to the highest `1.1.N` a source lists on this run,
+and the resolution is recorded. `dev` and other ranges are reported.
+
+**Measured 2026-10-01, both WHO IGs together:** 20 packages install from these
+sources, including both templates. The missing ones are the pinned HL7 versions
+(IPS, terminology, extensions, CQL, CRMI, SDC, IPA), `fhir.cqf.common` and
+`us.nlm.vsac`. Run with `--missing-out missing.txt`, mirror that list from a
+machine with packages.fhir.org, and run again with `--mirror`.
 
 ## Scripts are the tools; CI calls them, never re-implements them
 

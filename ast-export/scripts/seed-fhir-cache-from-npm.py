@@ -2,7 +2,29 @@
 """
 Seed the FHIR package cache from npm, EXACT versions only.
 
-    seed-fhir-cache-from-npm.py [--cache DIR] [--sushi-config FILE] [--dry-run] [name#version ...]
+    seed-fhir-cache-from-npm.py [--cache DIR] [--sushi-config FILE] [--mirror DIR|GIT-URL]
+                                [--missing-out FILE] [--template-repo NAME=OWNER/REPO]
+                                [--dry-run] [name#version ...]
+
+Sources, tried in this order for each package; each is a TRUST ANCHOR named
+by the owner or the package's own publisher, and nothing else is consulted:
+
+1. the cache itself (already present);
+2. npm, account `grahamegrieve` (owner, 2026-09-30: trusted);
+3. the publisher's own published-site repository on GitHub:
+   WorldHealthOrganization/smart-html for `smart.who.int.*`,
+   IHE/publications for `ihe.*`;
+4. a template's own source repository, at HEAD (`current` means HEAD; the
+   commit is recorded). The repository comes from FHIR/ig-registry's
+   templates.json, read LIVE every run, or from an explicit
+   `--template-repo name=owner/repo` for a template the registry does not list
+   (who.template.root, 2026-10-01). Owner: fhir.base.template is trusted;
+5. `--mirror`: a directory or git repository of `<name>#<version>.tgz` the
+   owner filled from packages.fhir.org (see mirror-fhir-packages.sh).
+
+Sources 3 to 5 publish no integrity hash, so the tarball's own
+`package/package.json` must name exactly the requested package and version,
+and its sha512 is recorded.
 
 For an environment that reaches registry.npmjs.org but not packages.fhir.org.
 The owner ruled (2026-09-30) that the npm account `grahamegrieve` is a trusted
@@ -22,8 +44,10 @@ Rules, each one a refusal rather than a best effort:
 - The unscoped name is tried first, then `@hl7/<name>`: the core packages live
   under the scope, because the unscoped `hl7.fhir.r4.core` is a placeholder.
 - Dependencies are followed through each package's own `package.json`,
-  exact versions only. `current`, `dev` and ranges are reported as
-  unresolvable, never guessed.
+  exact versions only. A patch wildcard (`1.1.x`) is resolved as the IG
+  Publisher resolves it, to the highest `1.1.N` a source LISTS on this run,
+  and the resolution is recorded. `dev` and other ranges are reported, never
+  guessed.
 
 Writes `<cache>/<name>#<version>/package/...`, the layout SUSHI and the IG
 Publisher read, and `<cache>/ast-export-npm-provenance.json` with where every
@@ -40,6 +64,9 @@ import subprocess
 import sys
 import tarfile
 import urllib.request
+import atexit
+import shutil
+import tempfile
 
 TRUSTED = "grahamegrieve"
 PLACEHOLDER = "0.0.1-security"
@@ -107,6 +134,187 @@ def unpack(data, dest):
         t.extractall(dest, filter="data")
 
 
+SITE_REPOS = [
+    # (name prefix, owner/repo, branch, path builder)
+    ("smart.who.int.", "WorldHealthOrganization/smart-html", "main",
+     lambda name, v, _ihe: f"{name[len('smart.who.int.'):]}/{v}/package.tgz"),
+    ("ihe.", "IHE/publications", "master",
+     lambda name, v, ihe: (f"{ihe[name]}/{v}/package.tgz" if name in ihe else None)),
+]
+
+# Nothing below is computed once and kept. Every lookup is made live, per run,
+# in a scratch directory deleted at exit (owner, 2026-10-01: "dynamically load
+# from repos... dont calc once and assume fixed. avoid drift").
+WORK = tempfile.mkdtemp(prefix="ast-export-seed-")
+atexit.register(lambda: shutil.rmtree(WORK, ignore_errors=True))
+
+TEMPLATE_REGISTRY = "https://raw.githubusercontent.com/FHIR/ig-registry/master/templates.json"
+TEMPLATE_OVERRIDES = {}  # --template-repo name=owner/repo, for a template the registry does not list
+_TEMPLATES = None
+_IHE = None
+_IHE_VERSIONS = {}
+
+
+def template_repos():
+    """FHIR/ig-registry's templates.json, "the authoritative GitHub repositories for known
+    templates", read live, plus the caller's explicit --template-repo entries."""
+    global _TEMPLATES
+    if _TEMPLATES is None:
+        try:
+            reg = json.load(urllib.request.urlopen(TEMPLATE_REGISTRY, timeout=60))
+            _TEMPLATES = {k: (v, "ig-registry") for k, v in reg.items() if k != "explanation"}
+        except Exception:  # noqa: BLE001 — reported through the missing list
+            _TEMPLATES = {}
+        for k, v in TEMPLATE_OVERRIDES.items():
+            _TEMPLATES[k] = (v, "--template-repo")
+    return _TEMPLATES
+
+
+def ihe_paths():
+    """ihe.<domain>.<profile> -> '<DOMAIN>/<Profile>' as IHE/publications spells the folders (case varies: mCSD)."""
+    global _IHE
+    if _IHE is not None:
+        return _IHE
+    _IHE = {}
+    tmp = os.path.join(WORK, "ihe-tree")
+    r = subprocess.run(["git", "clone", "-q", "--depth", "1", "--filter=blob:none", "--no-checkout",
+                        "https://github.com/IHE/publications", tmp], capture_output=True, text=True)
+    if r.returncode != 0:
+        return _IHE
+    r = subprocess.run(["git", "-C", tmp, "ls-tree", "-d", "--name-only", "HEAD"], capture_output=True, text=True)
+    for dom in r.stdout.split():
+        r2 = subprocess.run(["git", "-C", tmp, "ls-tree", "-d", "--name-only", f"HEAD:{dom}"],
+                            capture_output=True, text=True)
+        for prof in r2.stdout.split():
+            _IHE[f"ihe.{dom.lower()}.{prof.lower()}"] = f"{dom}/{prof}"
+            r3 = subprocess.run(["git", "-C", tmp, "ls-tree", "-d", "--name-only", f"HEAD:{dom}/{prof}"],
+                                capture_output=True, text=True)
+            _IHE_VERSIONS[f"ihe.{dom.lower()}.{prof.lower()}"] = r3.stdout.split()
+    return _IHE
+
+
+def resolve_patch_wildcard(name, version):
+    """'1.1.x' -> the highest '1.1.N' the live sources hold, as the IG Publisher resolves it.
+    Returns (concrete, where) or (None, reason). Never guesses beyond what a source lists."""
+    m = re.fullmatch(r"(\d+)\.(\d+)\.x", version)
+    if not m:
+        return None, f"'{version}' is not an exact version or a patch wildcard"
+    cands = []
+    if name.startswith("ihe."):
+        ihe_paths()
+        cands += [(v, "IHE/publications") for v in _IHE_VERSIONS.get(name, [])]
+    vs = npm_view(f"{name}") or {}
+    cands += [(v, "npm") for v in (vs.get("versions") or []) if isinstance(vs.get("versions"), list)]
+    pat = re.compile(rf"{m.group(1)}\.{m.group(2)}\.(\d+)")
+    best = max(((int(pat.fullmatch(v).group(1)), v, w) for v, w in cands if pat.fullmatch(v)), default=None)
+    if best is None:
+        return None, f"no {m.group(1)}.{m.group(2)}.N listed by any source"
+    return best[1], best[2]
+
+
+def head_commit(repo, branch="HEAD"):
+    r = subprocess.run(["git", "ls-remote", f"https://github.com/{repo}", branch], capture_output=True, text=True)
+    return r.stdout.split()[0] if r.returncode == 0 and r.stdout.strip() else None
+
+
+def tar_identity(data):
+    """(name, version) from a package tarball's package/package.json."""
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as t:
+        for m in t.getmembers():
+            if os.path.normpath(m.name) == os.path.join("package", "package.json"):
+                pj = json.load(t.extractfile(m))
+                return pj.get("name"), pj.get("version")
+    return None, None
+
+
+def sha512(data):
+    return "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
+
+
+def from_site(name, version):
+    """(provenance, bytes) from the publisher's own site repo, or (None, reason)."""
+    for prefix, repo, branch, path in SITE_REPOS:
+        if not name.startswith(prefix):
+            continue
+        rel = path(name, version, ihe_paths() if prefix == "ihe." else {})
+        if rel is None:
+            return None, f"{repo}: no folder for {name}"
+        url = f"https://raw.githubusercontent.com/{repo}/{branch}/{rel}"
+        try:
+            data = urllib.request.urlopen(url, timeout=300).read()
+        except Exception as e:  # noqa: BLE001
+            return None, f"{url}: {e}"
+        n, v = tar_identity(data)
+        if (n, v) != (name, version):
+            return None, f"{url}: package.json says {n}#{v}"
+        return {"site": url, "commit": head_commit(repo, branch), "sha512": sha512(data)}, data
+    return None, "no publisher site repo for this name"
+
+
+def from_template_repo(name, version, dest):
+    """Clone a template's repo at HEAD into the cache layout. 'current' means HEAD."""
+    entry = template_repos().get(name)
+    if not entry:
+        return None, "not in FHIR/ig-registry templates.json and no --template-repo given"
+    repo, via = entry
+    tmp = dest + ".clone"
+    if subprocess.run(["git", "clone", "-q", "--depth", "1", f"https://github.com/{repo}", tmp],
+                      capture_output=True).returncode != 0:
+        return None, f"{repo}: clone failed"
+    pj = json.load(open(os.path.join(tmp, "package", "package.json")))
+    if pj.get("name") != name or (version != "current" and pj.get("version") != version):
+        subprocess.run(["rm", "-rf", tmp])
+        return None, f"{repo} HEAD is {pj.get('name')}#{pj.get('version')}, not {name}#{version}"
+    commit = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    pkg = os.path.join(dest, "package")
+    os.makedirs(pkg, exist_ok=True)
+    for entry in os.listdir(tmp):
+        if entry in (".git", "package"):
+            continue
+        os.rename(os.path.join(tmp, entry), os.path.join(pkg, entry))
+    for entry in os.listdir(os.path.join(tmp, "package")):
+        os.rename(os.path.join(tmp, "package", entry), os.path.join(pkg, entry))
+    subprocess.run(["rm", "-rf", tmp])
+    return {"templateRepo": f"https://github.com/{repo}", "repoFrom": via, "commit": commit,
+            "headVersion": pj.get("version")}, None
+
+
+_MIRROR = None
+
+
+def mirror_dir(spec):
+    global _MIRROR
+    if _MIRROR is None and spec:
+        if os.path.isdir(spec):
+            _MIRROR = spec
+        else:
+            _MIRROR = os.path.join(WORK, "mirror")
+            subprocess.run(["git", "clone", "-q", "--depth", "1", spec, _MIRROR], check=False)
+    return _MIRROR
+
+
+def from_mirror(spec, name, version):
+    d = mirror_dir(spec)
+    if not d:
+        return None, "no --mirror given"
+    f = os.path.join(d, f"{name}#{version}.tgz")
+    if not os.path.exists(f):
+        return None, f"not in mirror {spec}"
+    data = open(f, "rb").read()
+    n, v = tar_identity(data)
+    if (n, v) != (name, version):
+        return None, f"mirror file says {n}#{v}"
+    return {"mirror": spec, "file": os.path.basename(f), "sha512": sha512(data)}, data
+
+
+def _pj_bytes(data):
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as t:
+        for m in t.getmembers():
+            if os.path.normpath(m.name) == os.path.join("package", "package.json"):
+                return t.extractfile(m).read()
+    return b"{}"
+
+
 def exact(v):
     return isinstance(v, str) and re.fullmatch(r"\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?", v) is not None
 
@@ -142,6 +350,8 @@ def sushi_deps(path):
 def main(argv):
     cache = os.path.expanduser("~/.fhir/packages")
     dry = False
+    mirror = None
+    missing_out = None
     wanted = []
     it = iter(argv)
     for a in it:
@@ -151,6 +361,13 @@ def main(argv):
             wanted += sushi_deps(next(it))
         elif a == "--dry-run":
             dry = True
+        elif a == "--mirror":
+            mirror = next(it)
+        elif a == "--missing-out":
+            missing_out = next(it)
+        elif a == "--template-repo":
+            k, _, v = next(it).partition("=")
+            TEMPLATE_OVERRIDES[k] = v
         elif "#" in a:
             wanted.append(a)
         else:
@@ -170,32 +387,76 @@ def main(argv):
             continue
         seen.add(spec)
         name, version = spec.split("#", 1)
+        if version.endswith(".x"):
+            concrete, where = resolve_patch_wildcard(name, version)
+            if concrete is None:
+                missing.append((spec, where))
+                continue
+            prov.setdefault("wildcards", {})[spec] = {"resolved": concrete, "from": where}
+            installed.append((spec, f"wildcard -> {concrete} (highest patch at {where})"))
+            queue.append(f"{name}#{concrete}")
+            continue
         dest = os.path.join(cache, spec)
         if os.path.exists(os.path.join(dest, "package", "package.json")):
             pj = json.load(open(os.path.join(dest, "package", "package.json")))
             installed.append((spec, "already in cache"))
         else:
-            if not exact(version):
-                missing.append((spec, f"'{version}' is not an exact version; not guessed"))
-                continue
-            cand, meta = resolve(name, version)
-            if cand is None:
-                missing.append((spec, meta))
-                continue
-            if dry:
-                installed.append((spec, f"would install from {cand}"))
-                pj = {"dependencies": meta.get("dependencies") or {}}
+            pj = None
+            reasons = []
+            # 2. npm, trusted account
+            if exact(version):
+                cand, meta = resolve(name, version)
+                if cand is not None:
+                    if dry:
+                        installed.append((spec, f"would install from npm {cand}"))
+                        pj = {"dependencies": meta.get("dependencies") or {}}
+                    else:
+                        try:
+                            url, integrity, data = fetch_verified(meta)
+                            unpack(data, dest)
+                            prov["packages"][spec] = {"source": "npm", "npm": cand, "tarball": url,
+                                                      "integrity": integrity, "maintainers": maintainers(meta)}
+                            installed.append((spec, f"npm {cand}"))
+                            pj = json.load(open(os.path.join(dest, "package", "package.json")))
+                        except Exception as e:  # noqa: BLE001
+                            reasons.append(f"npm: {e}")
+                else:
+                    reasons.append(f"npm: {meta}")
             else:
-                try:
-                    url, integrity, data = fetch_verified(meta)
-                    unpack(data, dest)
-                except Exception as e:  # noqa: BLE001 — reported, never swallowed
-                    missing.append((spec, str(e)))
+                reasons.append(f"npm: '{version}' is not an exact version")
+            # 3. the publisher's own site repo; 5. the owner's mirror
+            for label, fetch in (("site", lambda: from_site(name, version)),
+                                 ("mirror", lambda: from_mirror(mirror, name, version))):
+                if pj is not None or not exact(version):
+                    break
+                got, data = fetch()
+                if got is None:
+                    reasons.append(f"{label}: {data}")
                     continue
-                prov["packages"][spec] = {"npm": cand, "tarball": url, "integrity": integrity,
-                                          "maintainers": maintainers(meta)}
-                installed.append((spec, f"from {cand}"))
-                pj = json.load(open(os.path.join(dest, "package", "package.json")))
+                if dry:
+                    installed.append((spec, f"would install from {label}"))
+                    pj = json.load(io.BytesIO(_pj_bytes(data)))
+                else:
+                    unpack(data, dest)
+                    prov["packages"][spec] = {"source": label, **got}
+                    installed.append((spec, label))
+                    pj = json.load(open(os.path.join(dest, "package", "package.json")))
+            # 4. a template's own repo ('current' = HEAD)
+            if pj is None and name in template_repos():
+                if dry:
+                    installed.append((spec, f"would clone {template_repos()[name][0]}"))
+                    pj = {}
+                else:
+                    got, err = from_template_repo(name, version, dest)
+                    if got is None:
+                        reasons.append(f"template: {err}")
+                    else:
+                        prov["packages"][spec] = {"source": "template-repo", **got}
+                        installed.append((spec, f"template repo {got['commit'][:8]}"))
+                        pj = json.load(open(os.path.join(dest, "package", "package.json")))
+            if pj is None:
+                missing.append((spec, " | ".join(reasons)))
+                continue
         for dn, dv in (pj.get("dependencies") or {}).items():
             queue.append(f"{dn}#{dv}")
 
@@ -206,6 +467,9 @@ def main(argv):
         print(f"ok       {s}  ({how})")
     for s, why in missing:
         print(f"MISSING  {s}  — {why}")
+    if missing_out:
+        with open(missing_out, "w") as f:
+            f.write("".join(f"{sp}\n" for sp, _ in missing))
     print(f"\n{len(installed)} installed or present, {len(missing)} missing. Cache: {cache}")
     return 1 if missing else 0
 
