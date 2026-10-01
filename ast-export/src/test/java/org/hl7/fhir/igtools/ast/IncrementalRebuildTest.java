@@ -120,8 +120,8 @@ class IncrementalRebuildTest {
     assertEquals(14, r.resources(), "same count: two replaced, twelve kept");
     assertEquals(Set.of(PD, M), r.grew(), "PD and M depend on rebuilt A and were not rebuilt: another round");
     Path merged = tmp.resolve("merged");
-    assertEquals("{\"rebuilt\":true}", Files.readString(merged.resolve("resources/Library/A.json")));
     JsonObject m = JsonParser.parseObject(Files.readString(merged.resolve("manifest.json")));
+    assertEquals("{\"rebuilt\":true}", Files.readString(merged.resolve(find(m, A).asString("file"))));
     assertTrue(m.asBoolean("mixed"));
     assertEquals("head-rev", find(m, A).asString("builtAt"));
     assertEquals("base-rev", find(m, PD).asString("builtAt"));

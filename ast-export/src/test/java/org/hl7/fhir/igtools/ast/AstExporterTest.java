@@ -67,8 +67,9 @@ class AstExporterTest {
     assertEquals(3, entries.size());
     assertEquals("Patient/p1", entries.get(0).key());
     assertEquals("http://x/Library/LibA|0.2.0", entries.get(1).key());
-    assertTrue(Files.exists(out.resolve("resources/Library/LibA.json")));
-    assertEquals("{\"id\":\"p1\"}", Files.readString(out.resolve("resources/Patient/p1.json")));
+    assertTrue(Files.exists(out.resolve(entries.get(1).file())));
+    assertEquals("resources/Library/" + AstExporter.fileName("LibA", "http://x/Library/LibA|0.2.0"), entries.get(1).file());
+    assertEquals("{\"id\":\"p1\"}", Files.readString(out.resolve(entries.get(0).file())));
 
     JsonObject m = JsonParser.parseObject(Files.readString(out.resolve("manifest.json")));
     assertEquals(AstExporter.SCHEMA, m.asString("$schema"));
@@ -94,6 +95,18 @@ class AstExporterTest {
 
     Files.move(ig.resolve("input/fsh/a.fsh"), ig.resolve("input/fsh/b.fsh"));
     assertNotEquals(d0, InputDigest.of(ig), "a rename changes the digest");
+  }
+
+  @Test
+  void twoVersionsOfOneTypeAndIdAreTwoFilesNotOne(@TempDir Path out) throws Exception {
+    List<FetchedFile> files = List.of(file("a.json",
+        resource("Library", "Lib", "http://x/Library/Lib", "1.0.0"),
+        resource("Library", "Lib", "http://x/Library/Lib", "2.0.0")));
+    List<AstExporter.Entry> entries = new AstExporter(r -> r.getElement().getChildren().get(1).getValue()
+        .getBytes(StandardCharsets.UTF_8)).export(files, out, new JsonObject());
+    assertNotEquals(entries.get(0).file(), entries.get(1).file());
+    assertEquals("1.0.0", Files.readString(out.resolve(entries.get(0).file())));
+    assertEquals("2.0.0", Files.readString(out.resolve(entries.get(1).file())));
   }
 
   /**

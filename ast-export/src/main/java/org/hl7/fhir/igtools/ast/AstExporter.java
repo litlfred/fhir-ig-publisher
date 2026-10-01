@@ -173,11 +173,26 @@ public class AstExporter {
     String canonical = childValue(e, "url");
     String version = childValue(e, "version");
     String name = childValue(e, "name");
-    String rel = "resources/" + safe(type) + "/" + safe(id) + ".json";
+    String key = keyOf(type, id, canonical, version);
+    // The file name carries a hash of the KEY: two versions (or canonicals) of
+    // one Type/id are two resources and must be two files (Copilot review on
+    // folio-assistant#1708).
+    String rel = "resources/" + safe(type) + "/" + fileName(id, key);
     Path target = outDir.resolve(rel);
     Files.createDirectories(target.getParent());
     Files.write(target, composer.compose(r));
-    return new Entry(keyOf(type, id, canonical, version), canonical, version, type, id, name, rel, sourceOf(f));
+    return new Entry(key, canonical, version, type, id, name, rel, sourceOf(f));
+  }
+
+  /** {@code <id>--<first 8 hex of sha256(key)>.json}. */
+  static String fileName(String id, String key) {
+    try {
+      byte[] d = java.security.MessageDigest.getInstance("SHA-256")
+          .digest(key.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      return safe(id) + "--" + java.util.HexFormat.of().formatHex(d).substring(0, 8) + ".json";
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException(e);
+    }
   }
 
   /** The file a resource came from, relative to the IG root when the fetcher recorded that. */
