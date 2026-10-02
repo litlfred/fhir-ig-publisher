@@ -287,4 +287,45 @@ class IncrementalRebuildTest {
     AstMerger.merge(base, partial, Set.of(PD), Set.of(), "b", "h", null, headIndex, tmp.resolve("m"));
     assertEquals(head, Files.readString(tmp.resolve("m/fsh-index.json")));
   }
+
+  // M6: nothing from an earlier round or run is reused.
+
+  @Test
+  void anEarlierCachePackageIsWipedBeforeANewOneIsWritten() throws Exception {
+    Path base = baseAst();
+    Path cache = tmp.resolve("cache");
+    CachePackageWriter.write(base, Set.of(A, B), cache, "x.ig.ast-cache", "0.0.0-ast.abc.r1", "4.0.1");
+    CachePackageWriter.write(base, Set.of(B), cache, "x.ig.ast-cache", "0.0.0-ast.abc.r2", "4.0.1");
+    assertFalse(Files.exists(cache.resolve("x.ig.ast-cache#0.0.0-ast.abc.r1")), "round 1's package is gone");
+    CachePackageWriter.write(base, Set.of(PD), cache, "x.ig.ast-cache", "0.0.0-ast.abc.r2", "4.0.1");
+    assertFalse(Files.exists(cache.resolve("x.ig.ast-cache#0.0.0-ast.abc.r2/package/Library-B.json")),
+        "a re-run of the same round does not keep the earlier run's files");
+  }
+
+  @Test
+  void aRoundDirectoryIsEmptiedBeforeUse() throws Exception {
+    Path r1 = tmp.resolve("work/r1");
+    Files.createDirectories(r1.resolve("input/resources"));
+    Files.writeString(r1.resolve("input/resources/Stale.json"), "{}");
+    IncrementalBuildCli.clean(r1);
+    assertTrue(Files.isDirectory(r1));
+    try (var s = Files.list(r1)) {
+      assertEquals(0, s.count());
+    }
+  }
+
+  @Test
+  void theDefaultCacheIsAScratchFolderThatLinksTheUsersPackages() throws Exception {
+    Path user = tmp.resolve("user-cache");
+    Files.createDirectories(user.resolve("hl7.fhir.r4.core#4.0.1/package"));
+    Files.createDirectories(user.resolve("x.ig.ast-cache#0.0.0-ast.old.r1/package"));
+    Path work = tmp.resolve("work");
+    Path cache = IncrementalBuildCli.scratchCache(work, user);
+    assertEquals(work.resolve("package-cache"), cache);
+    assertTrue(Files.isSymbolicLink(cache.resolve("hl7.fhir.r4.core#4.0.1")));
+    assertFalse(Files.exists(cache.resolve("x.ig.ast-cache#0.0.0-ast.old.r1")), "never an old cache package");
+    Path base = baseAst();
+    CachePackageWriter.write(base, Set.of(A), cache, "x.ig.ast-cache", "0.0.0-ast.abc.r1", "4.0.1");
+    assertFalse(Files.exists(user.resolve("x.ig.ast-cache#0.0.0-ast.abc.r1")), "the user's cache is untouched");
+  }
 }

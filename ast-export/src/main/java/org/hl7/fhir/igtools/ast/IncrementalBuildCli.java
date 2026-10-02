@@ -55,7 +55,10 @@ public class IncrementalBuildCli {
     Path baseAst = Path.of(astArg);
     Path ig = Path.of(igArg).toAbsolutePath();
     Path out = Path.of(outArg);
-    Path work = Path.of(orElse(AstExportCli.param(args, "-work"), ig.resolve("temp-ast-incremental").toString()));
+    // Default scratch work dir OUTSIDE the IG: inside it, it would be an
+    // untracked file the next run's work-tree check refuses (M2, M6).
+    String workArg = AstExportCli.param(args, "-work");
+    Path work = workArg != null ? Path.of(workArg) : Files.createTempDirectory("ast-incremental-");
     String cacheFolder = AstExportCli.param(args, "-cache-folder");
     int maxRounds = Integer.parseInt(orElse(AstExportCli.param(args, "-max-rounds"), "3"));
     double threshold = Double.parseDouble(orElse(AstExportCli.param(args, "-threshold"),
@@ -91,7 +94,9 @@ public class IncrementalBuildCli {
     }
     IncrementalPlan.guard(plan);
     Files.createDirectories(work);
+    deleteTree(work.resolve("package-cache"));
     Files.writeString(work.resolve("plan.json"), JsonParser.compose(plan, true));
+    System.out.println("Plan: " + work.resolve("plan.json"));
 
     if ("full".equals(plan.asString("decision"))) {
       fullBuild(ig, out, JsonParser.compose(plan.getJsonArray("fullBuildBecause")));
@@ -131,13 +136,13 @@ public class IncrementalBuildCli {
       Set<String> load = current.toLoad(rebuild);
       String version = "0.0.0-ast." + shortRev(baseRev) + ".r" + round;
       Path cache = cacheFolder != null ? Path.of(cacheFolder)
-          : Path.of(System.getProperty("user.home"), ".fhir", "packages");
+          : scratchCache(work, Path.of(System.getProperty("user.home"), ".fhir", "packages"));
       String name = CachePackageWriter.packageName(packageId);
       CachePackageWriter.write(currentBase, allExcept(currentBase, rebuild, remove), cache, name, version, fhirVersion);
 
       Map<String, String> sources = sources(currentBase);
       Set<String> libraries = libraryNames(currentBase, rebuild);
-      Path roundDir = work.resolve("r" + round);
+      Path roundDir = clean(work.resolve("r" + round));
       List<String> newFiles = new java.util.ArrayList<>();
       for (String src : newSources) {
         newFiles.addAll(copyNewSourceOutputs(ig, roundDir, src));
@@ -152,9 +157,7 @@ public class IncrementalBuildCli {
           Publisher.determineActualIG(roundDir.toString(), PublisherUtils.IGBuildMode.MANUAL)));
       p.getSettings().setNoSushi(true);
       p.getSettings().setCacheOption(PublisherUtils.CacheOption.LEAVE);
-      if (cacheFolder != null) {
-        p.getSettings().setPackageCacheFolder(cacheFolder);
-      }
+      p.getSettings().setPackageCacheFolder(cache.toString());
       if (tx != null) {
         p.getSettings().setTxServer(tx);
       }
@@ -162,7 +165,7 @@ public class IncrementalBuildCli {
       Path partial = roundDir.resolve("output-ast");
       p.exportAst(partial);
 
-      Path merged = work.resolve("merged-r" + round);
+      Path merged = clean(work.resolve("merged-r" + round));
       AstMerger.Result r = AstMerger.merge(currentBase, partial, rebuild, remove, baseRev, headRev, headInputs,
           ig.resolve(FSH_INDEX), merged);
       currentBase = merged;
@@ -233,6 +236,58 @@ public class IncrementalBuildCli {
         ? manifest.getJsonObject("inputs") : null;
     return inputs == null || !inputs.has("sourceRevision") || inputs.get("sourceRevision").isJsonNull()
         ? null : inputs.asString("sourceRevision");
+  }
+
+  /**
+   * {@code dir}, emptied. Review of PR #8, M6: a round's temporary IG and
+   * merge were reused across runs, so a file a previous run left there was
+   * built or merged as if this run had produced it.
+   */
+  static Path clean(Path dir) throws java.io.IOException {
+    deleteTree(dir);
+    Files.createDirectories(dir);
+    return dir;
+  }
+
+  /** Deletes {@code p} and everything under it, never following a symbolic link. */
+  static void deleteTree(Path p) throws java.io.IOException {
+    if (!Files.exists(p, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+      return;
+    }
+    if (Files.isDirectory(p, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+      try (var s = Files.list(p)) {
+        for (Path c : (Iterable<Path>) s::iterator) {
+          deleteTree(c);
+        }
+      }
+    }
+    Files.delete(p);
+  }
+
+  /**
+   * The default package cache: {@code <work>/package-cache}, a SCRATCH
+   * folder, rebuilt every run, in which each package of the user's cache is
+   * a symbolic link and the {@code *.ast-cache} packages are written for
+   * real. Review of PR #8, M6: they used to land in {@code ~/.fhir/packages}
+   * and stay there. Pass {@code -cache-folder} to choose another.
+   */
+  static Path scratchCache(Path work, Path userCache) throws java.io.IOException {
+    Path cache = work.resolve("package-cache");
+    if (Files.exists(cache)) {
+      return cache;
+    }
+    Files.createDirectories(cache);
+    if (Files.isDirectory(userCache)) {
+      try (var s = Files.list(userCache)) {
+        for (Path pkg : (Iterable<Path>) s::iterator) {
+          String n = pkg.getFileName().toString();
+          if (n.contains("#") && !n.contains(".ast-cache#") && Files.isDirectory(pkg)) {
+            Files.createSymbolicLink(cache.resolve(n), pkg.toAbsolutePath());
+          }
+        }
+      }
+    }
+    return cache;
   }
 
   static Set<String> strings(JsonObject o, String name) {

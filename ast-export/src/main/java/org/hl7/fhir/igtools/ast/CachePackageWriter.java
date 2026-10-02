@@ -40,6 +40,7 @@ public final class CachePackageWriter {
   public static Path write(Path astDir, Set<String> keys, Path cacheFolder, String name, String version,
       String fhirVersion) throws IOException {
     JsonObject manifest = JsonParser.parseObject(Files.readString(astDir.resolve("manifest.json")));
+    clearStale(cacheFolder, name);
     Path pkg = cacheFolder.resolve(name + "#" + version).resolve("package");
     Files.createDirectories(pkg);
 
@@ -78,6 +79,24 @@ public final class CachePackageWriter {
     pj.add("dependencies", new JsonObject());
     Files.writeString(pkg.resolve("package.json"), JsonParser.compose(pj, true));
     return pkg.getParent();
+  }
+
+  /**
+   * Removes every {@code <name>#*} folder: an earlier round's or run's cache
+   * package, whose files would otherwise be loaded beside this one's (review
+   * of PR #8, M6). Only packages under this exact cache name are touched.
+   */
+  static void clearStale(Path cacheFolder, String name) throws IOException {
+    if (!name.endsWith(".ast-cache") || !Files.isDirectory(cacheFolder)) {
+      return;
+    }
+    try (var s = Files.list(cacheFolder)) {
+      for (Path p : (Iterable<Path>) s::iterator) {
+        if (p.getFileName().toString().startsWith(name + "#")) {
+          IncrementalBuildCli.deleteTree(p);
+        }
+      }
+    }
   }
 
   private static void copyIfPresent(JsonObject from, JsonObject to, Map<String, String> names) {
