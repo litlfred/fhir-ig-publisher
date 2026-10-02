@@ -91,7 +91,7 @@ class IncrementalPlanTest {
 
   @Test
   void editingALibraryRebuildsEverythingThatDependsOnItAndLoadsNothingElse() throws Exception {
-    JsonObject p = plan("M\tinput/fsh/logic/B.fsh", null, 0.4);
+    JsonObject p = plan("M\tinput/fsh/logic/B.fsh", Map.of(), 0.4);
     assertEquals("incremental", p.asString("decision"));
     assertEquals(List.of(B), list(p, "seeds"));
     assertEquals(Set.of(A, B, PD, M), Set.copyOf(list(p, "rebuild")), "forward cone, transitively");
@@ -101,7 +101,7 @@ class IncrementalPlanTest {
 
   @Test
   void editingALeafRebuildsItAloneAndLoadsWhatItUses() throws Exception {
-    JsonObject p = plan("M\tinput/fsh/logic/PD.fsh", null, 0.4);
+    JsonObject p = plan("M\tinput/fsh/logic/PD.fsh", Map.of(), 0.4);
     assertEquals(List.of(PD), list(p, "rebuild"));
     assertEquals(Set.of(A, B), Set.copyOf(list(p, "loadFromCache")), "its dependencies come from the cache");
   }
@@ -192,7 +192,7 @@ class IncrementalPlanTest {
 
   @Test
   void aConeAboveTheThresholdIsAFullBuild() throws Exception {
-    JsonObject p = plan("M\tinput/fsh/logic/B.fsh", null, 0.2);
+    JsonObject p = plan("M\tinput/fsh/logic/B.fsh", Map.of(), 0.2);
     assertEquals("full", p.asString("decision"), "4 of 14 resources is 28.6%, above 20%");
     assertTrue(list(p, "fullBuildBecause").get(0).contains("threshold"));
   }
@@ -217,7 +217,7 @@ class IncrementalPlanTest {
 
   @Test
   void theGuardDecidesFullAndKeepsTheComputedPlanForReview() throws Exception {
-    JsonObject p = IncrementalPlan.guard(plan("M\tinput/fsh/logic/PD.fsh", null, 0.4), true);
+    JsonObject p = IncrementalPlan.guard(plan("M\tinput/fsh/logic/PD.fsh", Map.of(), 0.4), true);
     assertEquals("full", p.asString("decision"));
     assertEquals("incremental", p.asString("computedDecision"));
     assertTrue(list(p, "fullBuildBecause").contains(IncrementalPlan.GUARD_REASON));
@@ -228,7 +228,7 @@ class IncrementalPlanTest {
   void theGuardIsOn() throws Exception {
     // Lifted only by the owner, after review: see IncrementalPlan.INCREMENTAL_GUARD.
     assertTrue(IncrementalPlan.INCREMENTAL_GUARD);
-    assertEquals("full", IncrementalPlan.guard(plan("M\tinput/fsh/logic/PD.fsh", null, 0.4)).asString("decision"));
+    assertEquals("full", IncrementalPlan.guard(plan("M\tinput/fsh/logic/PD.fsh", Map.of(), 0.4)).asString("decision"));
   }
 
   // M1: a key is removed only when head no longer defines it.
@@ -245,5 +245,15 @@ class IncrementalPlanTest {
     JsonObject p = plan("D\tinput/cql/A.cql", Map.of(), 0.9);
     assertTrue(list(p, "remove").isEmpty());
     assertTrue(list(p, "rebuild").contains(A));
+  }
+
+  // M4: a .fsh file may also hold RuleSets, Aliases or parents that other files use.
+
+  @Test
+  void aModifiedFshFileWithoutFshConeUsersIsAFullBuild() throws Exception {
+    JsonObject p = plan("M\tinput/fsh/logic/PD.fsh", null, 0.9);
+    assertEquals("full", p.asString("decision"));
+    assertTrue(list(p, "fullBuildBecause").get(0).contains("fsh-users"));
+    assertEquals("full", plan("D\tinput/fsh/logic/PD.fsh", null, 0.9).asString("decision"));
   }
 }

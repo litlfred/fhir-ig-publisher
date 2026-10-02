@@ -89,6 +89,8 @@ public final class IncrementalPlan {
   private final Map<String, Set<String>> fshOutputs = new HashMap<>();
   /** fsh file → fsh files that insert from it (from fsh-cone); optional. */
   private final Map<String, Set<String>> fshUsers;
+  /** Whether fsh-cone's users were supplied at all; an empty map is an answer, null is not. */
+  private final boolean fshUsersSupplied;
   /** Output files SUSHI generates at HEAD, from head's fsh-index; null when unknown. */
   private final Set<String> headFshOutputs;
 
@@ -104,6 +106,7 @@ public final class IncrementalPlan {
    */
   public IncrementalPlan(Path astDir, Map<String, Set<String>> fshUsers, Path headFshIndex) throws IOException {
     this.fshUsers = fshUsers == null ? Map.of() : fshUsers;
+    this.fshUsersSupplied = fshUsers != null;
     if (headFshIndex != null && Files.exists(headFshIndex)) {
       headFshOutputs = new TreeSet<>();
       for (JsonElement je : (JsonArray) JsonParser.parse(Files.readString(headFshIndex))) {
@@ -180,6 +183,14 @@ public final class IncrementalPlan {
       if (path.startsWith(r)) {
         return new FileResult(c, Effect.RENDER_ONLY, Set.of(), "feeds rendering only (" + r + ")");
       }
+    }
+    if (path.endsWith(".fsh") && (c.status() == 'M' || c.status() == 'D') && !fshUsersSupplied) {
+      // Review of PR #8, M4: a .fsh file that declares resources may ALSO
+      // declare RuleSets, Aliases or parents that other files use. Its
+      // outputs alone are not its effect.
+      return new FileResult(c, Effect.FULL_BUILD, resourcesFor(path, new LinkedHashSet<>()),
+          "changed FSH file may also declare RuleSets, Aliases or parents used elsewhere; without -fsh-users "
+              + "(fsh-cone --file-users) its effect cannot be told");
     }
     Set<String> hits = resourcesFor(path, new LinkedHashSet<>());
     if (!hits.isEmpty()) {
