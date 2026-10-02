@@ -3,7 +3,7 @@
 Seed the FHIR package cache from npm, EXACT versions only.
 
     seed-fhir-cache-from-npm.py [--cache DIR] [--sushi-config FILE] [--mirror DIR|GIT-URL]
-                                [--missing-out FILE] [--template-repo NAME=OWNER/REPO]
+                                [--mirror-commit SHA] [--missing-out FILE] [--template-repo NAME=OWNER/REPO]
                                 [--dry-run] [name#version ...]
 
 Sources, tried in this order for each package; each is a TRUST ANCHOR named
@@ -36,9 +36,20 @@ Rules, each one a refusal rather than a best effort:
 - EXACT versions only. A pinned `hl7.fhir.uv.cql#1.0.0` is never satisfied by
   2.0.0: a different version is different content, and a build over it would
   measure something else while looking like the real thing.
-- A tarball is accepted only when its npm maintainers include `grahamegrieve`.
+- A tarball is accepted only when THAT VERSION was published by `grahamegrieve`
+  (its `_npmUser`), not merely when he is among the package's maintainers: a
+  co-maintainer can publish a version. npm is always asked at
+  https://registry.npmjs.org/, explicitly, whatever the local npm config says.
   npm's `0.0.1-security` placeholder (a package taken down as malicious) is
   refused by name.
+- A mirror file must match the mirror's own `SHA512SUMS`; a git mirror is
+  cloned at a recorded commit, and a failed clone is reported. A site file is
+  fetched BY the commit recorded for it. A package already in the cache must
+  name exactly the package and version asked for in its `package.json`.
+- A package name or version that starts with `-` or holds a path separator or
+  `..` is refused before it reaches a path or an npm argument.
+- A package is unpacked in a temporary directory beside its destination and
+  renamed into place, so an interrupted run never leaves a half package.
 - The tarball's published `dist.integrity` (sha512) is verified before it is
   unpacked.
 - The unscoped name is tried first, then `@hl7/<name>`: the core packages live
@@ -70,10 +81,17 @@ import tempfile
 
 TRUSTED = "grahamegrieve"
 PLACEHOLDER = "0.0.1-security"
+NPM_REGISTRY = "https://registry.npmjs.org/"
+
+
+def valid_part(s):
+    """A package name or version safe to put in a path or an npm argument."""
+    return (isinstance(s, str) and s != "" and not s.startswith("-") and "/" not in s and "\\" not in s
+            and ".." not in s and "\0" not in s and s.strip() == s)
 
 
 def npm_view(spec):
-    r = subprocess.run(["npm", "view", spec, "--json"], capture_output=True, text=True)
+    r = subprocess.run(["npm", "view", spec, "--json", "--registry", NPM_REGISTRY], capture_output=True, text=True)
     if r.returncode != 0 or not r.stdout.strip():
         return None
     try:
@@ -83,11 +101,20 @@ def npm_view(spec):
     return d[-1] if isinstance(d, list) else d
 
 
+def _person(m):
+    """npm prints a person as 'name <email>'; the registry document holds {name, email}."""
+    if isinstance(m, dict):
+        return m.get("name")
+    return str(m).split(" ")[0] if m else None
+
+
 def maintainers(meta):
-    out = []
-    for m in meta.get("maintainers") or []:
-        out.append(m.get("name") if isinstance(m, dict) else str(m).split(" ")[0])
-    return out
+    return [_person(m) for m in meta.get("maintainers") or []]
+
+
+def publisher(meta):
+    """Who published THIS version: npm's `_npmUser`, or None when it is not recorded."""
+    return _person(meta.get("_npmUser"))
 
 
 def resolve(name, version):
@@ -104,9 +131,9 @@ def resolve(name, version):
         if version == PLACEHOLDER:
             reasons.append(f"{cand}: npm malicious-package placeholder")
             continue
-        who = maintainers(meta)
-        if TRUSTED not in who:
-            reasons.append(f"{cand}@{version}: maintainers {who}, not {TRUSTED}")
+        who = publisher(meta)
+        if who != TRUSTED:
+            reasons.append(f"{cand}@{version}: published by {who!r}, not {TRUSTED}")
             continue
         return cand, meta
     return None, "; ".join(reasons)
@@ -125,13 +152,21 @@ def fetch_verified(meta):
 
 
 def unpack(data, dest):
-    os.makedirs(dest, exist_ok=True)
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as t:
-        for m in t.getmembers():
-            p = os.path.normpath(m.name)
-            if p.startswith("..") or os.path.isabs(p):
-                raise ValueError(f"unsafe path in tarball: {m.name}")
-        t.extractall(dest, filter="data")
+    """Unpack into a temporary directory beside `dest`, then rename it into place."""
+    parent = os.path.dirname(os.path.abspath(dest))
+    os.makedirs(parent, exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix=".unpack-", dir=parent)
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as t:
+            for m in t.getmembers():
+                p = os.path.normpath(m.name)
+                if p.startswith("..") or os.path.isabs(p):
+                    raise ValueError(f"unsafe path in tarball: {m.name}")
+            t.extractall(tmp, filter="data")
+        os.rename(tmp, dest)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
 
 
 SITE_REPOS = [
@@ -213,8 +248,14 @@ def resolve_patch_wildcard(name, version):
 
 
 def head_commit(repo, branch="HEAD"):
-    r = subprocess.run(["git", "ls-remote", f"https://github.com/{repo}", branch], capture_output=True, text=True)
-    return r.stdout.split()[0] if r.returncode == 0 and r.stdout.strip() else None
+    return remote_commit(f"https://github.com/{repo}", branch)
+
+
+def remote_commit(url, ref="HEAD"):
+    """The commit `ref` names in `url` NOW, or None. Looked up live, every run."""
+    r = subprocess.run(["git", "ls-remote", url, ref], capture_output=True, text=True)
+    out = r.stdout.split() if r.returncode == 0 else []
+    return out[0] if out and re.fullmatch(r"[0-9a-f]{40}", out[0]) else None
 
 
 def tar_identity(data):
@@ -239,7 +280,12 @@ def from_site(name, version):
         rel = path(name, version, ihe_paths() if prefix == "ihe." else {})
         if rel is None:
             return None, f"{repo}: no folder for {name}"
-        url = f"https://raw.githubusercontent.com/{repo}/{branch}/{rel}"
+        # The commit is resolved FIRST and the file fetched BY it, so the
+        # recorded commit is the one the bytes came from.
+        commit = head_commit(repo, branch)
+        if commit is None:
+            return None, f"{repo}: cannot resolve {branch} to a commit"
+        url = f"https://raw.githubusercontent.com/{repo}/{commit}/{rel}"
         try:
             data = urllib.request.urlopen(url, timeout=300).read()
         except Exception as e:  # noqa: BLE001
@@ -247,7 +293,7 @@ def from_site(name, version):
         n, v = tar_identity(data)
         if (n, v) != (name, version):
             return None, f"{url}: package.json says {n}#{v}"
-        return {"site": url, "commit": head_commit(repo, branch), "sha512": sha512(data)}, data
+        return {"site": url, "branch": branch, "commit": commit, "sha512": sha512(data)}, data
     return None, "no publisher site repo for this name"
 
 
@@ -257,54 +303,125 @@ def from_template_repo(name, version, dest):
     if not entry:
         return None, "not in FHIR/ig-registry templates.json and no --template-repo given"
     repo, via = entry
-    tmp = dest + ".clone"
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo or ""):
+        return None, f"{repo!r} is not owner/repo"
+    tmp = os.path.join(WORK, "template-" + re.sub(r"[^A-Za-z0-9._-]", "_", name))
+    shutil.rmtree(tmp, ignore_errors=True)
     if subprocess.run(["git", "clone", "-q", "--depth", "1", f"https://github.com/{repo}", tmp],
                       capture_output=True).returncode != 0:
         return None, f"{repo}: clone failed"
-    pj = json.load(open(os.path.join(tmp, "package", "package.json")))
+    pjf = os.path.join(tmp, "package", "package.json")
+    if not os.path.isfile(pjf):
+        return None, f"{repo} HEAD has no package/package.json"
+    pj = json.load(open(pjf))
     if pj.get("name") != name or (version != "current" and pj.get("version") != version):
-        subprocess.run(["rm", "-rf", tmp])
         return None, f"{repo} HEAD is {pj.get('name')}#{pj.get('version')}, not {name}#{version}"
     commit = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    pkg = os.path.join(dest, "package")
-    os.makedirs(pkg, exist_ok=True)
-    for entry in os.listdir(tmp):
-        if entry in (".git", "package"):
+    # Assemble beside dest, then rename into place.
+    parent = os.path.dirname(os.path.abspath(dest))
+    os.makedirs(parent, exist_ok=True)
+    stage = tempfile.mkdtemp(prefix=".unpack-", dir=parent)
+    pkg = os.path.join(stage, "package")
+    os.makedirs(pkg)
+    for e in os.listdir(tmp):
+        if e in (".git", "package"):
             continue
-        os.rename(os.path.join(tmp, entry), os.path.join(pkg, entry))
-    for entry in os.listdir(os.path.join(tmp, "package")):
-        os.rename(os.path.join(tmp, "package", entry), os.path.join(pkg, entry))
-    subprocess.run(["rm", "-rf", tmp])
+        os.rename(os.path.join(tmp, e), os.path.join(pkg, e))
+    for e in os.listdir(os.path.join(tmp, "package")):
+        os.rename(os.path.join(tmp, "package", e), os.path.join(pkg, e))
+    os.rename(stage, dest)
     return {"templateRepo": f"https://github.com/{repo}", "repoFrom": via, "commit": commit,
             "headVersion": pj.get("version")}, None
 
 
-_MIRROR = None
+_MIRROR = None  # (directory, commit or None, error or None), for THIS run only
+MIRROR_COMMIT = None  # --mirror-commit: pin a git mirror to this commit
 
 
 def mirror_dir(spec):
+    """(directory, commit, error). A git mirror is cloned at a commit fixed BEFORE the clone:
+    --mirror-commit, or the remote HEAD looked up live; the clone's exit code is checked
+    and its checked-out commit compared with that one."""
     global _MIRROR
     if _MIRROR is None and spec:
         if os.path.isdir(spec):
-            _MIRROR = spec
+            _MIRROR = (spec, None, None)
         else:
-            _MIRROR = os.path.join(WORK, "mirror")
-            subprocess.run(["git", "clone", "-q", "--depth", "1", spec, _MIRROR], check=False)
-    return _MIRROR
+            commit = MIRROR_COMMIT or remote_commit(spec)
+            d = os.path.join(WORK, "mirror")
+            if commit is None:
+                _MIRROR = (None, None, f"{spec}: cannot resolve HEAD to a commit")
+            else:
+                steps = [["git", "init", "-q", d],
+                         ["git", "-C", d, "fetch", "-q", "--depth", "1", spec, commit],
+                         ["git", "-C", d, "checkout", "-q", "--detach", "FETCH_HEAD"]]
+                err = None
+                for cmd in steps:
+                    r = subprocess.run(cmd, capture_output=True, text=True)
+                    if r.returncode != 0:
+                        err = f"{spec}@{commit}: {' '.join(cmd[3:5])} failed: {r.stderr.strip()}"
+                        break
+                if err is None:
+                    got = subprocess.run(["git", "-C", d, "rev-parse", "HEAD"], capture_output=True,
+                                         text=True).stdout.strip()
+                    if got != commit:
+                        err = f"{spec}: checked out {got}, not {commit}"
+                _MIRROR = (None, None, err) if err else (d, commit, None)
+    return _MIRROR or (None, None, None)
+
+
+def read_sha512sums(d):
+    """{file: hex} from the mirror's SHA512SUMS (sha512sum's format), or None when absent."""
+    f = os.path.join(d, "SHA512SUMS")
+    if not os.path.isfile(f):
+        return None
+    out = {}
+    with open(f, encoding="utf-8") as fh:
+        lines = fh.read().splitlines()
+    for line in lines:
+        m = re.fullmatch(r"([0-9a-f]{128}) [ *](.+)", line)
+        if m:
+            out[m.group(2)] = m.group(1)
+    return out
 
 
 def from_mirror(spec, name, version):
-    d = mirror_dir(spec)
+    d, commit, err = mirror_dir(spec)
+    if err:
+        return None, err
     if not d:
         return None, "no --mirror given"
-    f = os.path.join(d, f"{name}#{version}.tgz")
+    base = f"{name}#{version}.tgz"
+    f = os.path.join(d, base)
     if not os.path.exists(f):
         return None, f"not in mirror {spec}"
-    data = open(f, "rb").read()
+    with open(f, "rb") as fh:
+        data = fh.read()
+    sums = read_sha512sums(d)
+    if sums is None:
+        return None, f"mirror {spec} has no SHA512SUMS"
+    if base not in sums:
+        return None, f"{base} is not listed in the mirror's SHA512SUMS"
+    if hashlib.sha512(data).hexdigest() != sums[base]:
+        return None, f"{base} does not match the mirror's SHA512SUMS"
     n, v = tar_identity(data)
     if (n, v) != (name, version):
         return None, f"mirror file says {n}#{v}"
-    return {"mirror": spec, "file": os.path.basename(f), "sha512": sha512(data)}, data
+    return {"mirror": spec, "commit": commit, "file": base, "sha512": sha512(data)}, data
+
+
+def check_cached(dest, name, version):
+    """None when `dest` holds exactly name#version, else why not. 'current' (a template at HEAD)
+    is checked by name only: its package.json carries the template's own version."""
+    pjf = os.path.join(dest, "package", "package.json")
+    try:
+        with open(pjf) as fh:
+            pj = json.load(fh)
+    except (OSError, ValueError) as e:
+        return f"{pjf}: {e}"
+    if pj.get("name") != name or (version != "current" and pj.get("version") != version):
+        return f"cache entry {dest} says {pj.get('name')}#{pj.get('version')}"
+    return None
 
 
 def _pj_bytes(data):
@@ -348,6 +465,7 @@ def sushi_deps(path):
 
 
 def main(argv):
+    global MIRROR_COMMIT
     cache = os.path.expanduser("~/.fhir/packages")
     dry = False
     mirror = None
@@ -363,6 +481,8 @@ def main(argv):
             dry = True
         elif a == "--mirror":
             mirror = next(it)
+        elif a == "--mirror-commit":
+            MIRROR_COMMIT = next(it)
         elif a == "--missing-out":
             missing_out = next(it)
         elif a == "--template-repo":
@@ -387,6 +507,9 @@ def main(argv):
             continue
         seen.add(spec)
         name, version = spec.split("#", 1)
+        if not (valid_part(name) and valid_part(version)):
+            missing.append((spec, "refused: a name or version must not start with '-' or hold a path separator or '..'"))
+            continue
         if version.endswith(".x"):
             concrete, where = resolve_patch_wildcard(name, version)
             if concrete is None:
@@ -397,7 +520,11 @@ def main(argv):
             queue.append(f"{name}#{concrete}")
             continue
         dest = os.path.join(cache, spec)
-        if os.path.exists(os.path.join(dest, "package", "package.json")):
+        if os.path.exists(dest):
+            bad = check_cached(dest, name, version)
+            if bad:
+                missing.append((spec, f"refused: {bad}; remove it and run again"))
+                continue
             pj = json.load(open(os.path.join(dest, "package", "package.json")))
             installed.append((spec, "already in cache"))
         else:
@@ -415,7 +542,8 @@ def main(argv):
                             url, integrity, data = fetch_verified(meta)
                             unpack(data, dest)
                             prov["packages"][spec] = {"source": "npm", "npm": cand, "tarball": url,
-                                                      "integrity": integrity, "maintainers": maintainers(meta)}
+                                                      "integrity": integrity, "publishedBy": publisher(meta),
+                                                      "maintainers": maintainers(meta)}
                             installed.append((spec, f"npm {cand}"))
                             pj = json.load(open(os.path.join(dest, "package", "package.json")))
                         except Exception as e:  # noqa: BLE001
