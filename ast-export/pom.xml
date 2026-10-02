@@ -27,7 +27,33 @@
         <apache_poi_version>5.4.1</apache_poi_version>
         <commonmark.version>0.21.0</commonmark.version>
         <txtmark.version>0.13</txtmark.version>
+        <!-- Floors for transitive dependencies that the Publisher brings in at
+             versions Trivy flags (PR #8, 2026-10-02): jackson 2.22.2 has
+             CVE-2026-89407, -89425, -91776 and -91777 (high), and log4j-api
+             2.24.3 has CVE-2026-49844 (medium). Raise them, or drop these,
+             once publisher.version carries the fixed ones itself. -->
+        <jackson.version>2.22.3</jackson.version>
+        <log4j.version>2.25.5</log4j.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-bom</artifactId>
+                <version>${log4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
