@@ -39,6 +39,29 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
  */
 public final class IncrementalPlan {
 
+  /**
+   * <b>The incremental-path guard.</b> While {@code true}, every plan the CLIs
+   * act on is decided {@code full}, with the reason {@link #GUARD_REASON}. The
+   * plan is still computed and written, so it can be reviewed against what a
+   * full build produces; only its {@code decision} is overridden, by
+   * {@link #guard(JsonObject)}.
+   *
+   * <p>Set by the code review of litlfred/fhir-ig-publisher PR #8
+   * (2026-10-02), which found that the incremental path could silently drop
+   * or keep stale resources (findings B1-B3, M1-M8). It is lifted ONLY when
+   * those fixes and their regression tests are in AND the W7 loop has been
+   * run end to end against a real Publisher and diffed against a full build
+   * (W8). Lifting it is a separate, reviewed change by the owner: set this to
+   * {@code false} and update {@code IncrementalPlanTest#theGuardIsOn}.
+   *
+   * <p>With the guard on, W1/W2 ({@code AstExporter}, {@code LogicEdges},
+   * {@code InputDigest}) can merge: nothing acts on an incremental decision.
+   */
+  public static final boolean INCREMENTAL_GUARD = true;
+
+  /** Why the guard forces a full build. */
+  public static final String GUARD_REASON = "incremental path not yet verified";
+
   /** Above this share of the IG, a full build is as cheap and simpler. */
   public static final double DEFAULT_THRESHOLD = 0.4;
 
@@ -279,6 +302,27 @@ public final class IncrementalPlan {
     }
     p.add("files", files);
     return p;
+  }
+
+  /**
+   * The ONE place the {@link #INCREMENTAL_GUARD} is applied: both
+   * {@code AstPlanCli} and {@code IncrementalBuildCli} pass every plan through
+   * here before writing or acting on it. The computed decision is kept as
+   * {@code computedDecision} for review.
+   */
+  public static JsonObject guard(JsonObject plan) {
+    return guard(plan, INCREMENTAL_GUARD);
+  }
+
+  static JsonObject guard(JsonObject plan, boolean on) {
+    if (!on) {
+      return plan;
+    }
+    plan.set("computedDecision", plan.asString("decision"));
+    plan.set("decision", "full");
+    plan.getJsonArray("fullBuildBecause").add(GUARD_REASON);
+    plan.set("guard", GUARD_REASON + " (code review of fhir-ig-publisher PR #8); the plan above is for review only");
+    return plan;
   }
 
   private static JsonArray arr(Set<String> s) {

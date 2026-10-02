@@ -57,6 +57,24 @@ when the target is elsewhere, such as another package's FHIRHelpers. Unlike
 upstream, such an edge is **kept**. A dependency on another package is still
 a dependency, and dropping it makes a rebuild cone look smaller than it is.
 
+## The incremental guard: every decision is `full` for now
+
+The code review of this PR (2026-10-02) found ways the incremental path could
+drop a resource or keep a stale one. Until those are fixed **and** W7 has been
+run against a real Publisher and diffed against a full build,
+`IncrementalPlan.INCREMENTAL_GUARD` is on, and it is applied in one place,
+`IncrementalPlan.guard`, by both CLIs:
+
+- `AstPlanCli` still computes and writes the whole plan, but its `decision` is
+  `full`, with `"incremental path not yet verified"` in `fullBuildBecause`. The
+  decision it would have made is kept as `computedDecision`, for review.
+- `IncrementalBuildCli` therefore always runs one ordinary build. The plan is
+  still written to `<work>/plan.json`.
+
+So W1 and W2 (`AstExporter`, `LogicEdges`, `InputDigest`) can merge safely:
+nothing acts on an incremental decision. The owner lifts the guard in a
+separate change, after review.
+
 ## Incremental plan (W5, W6)
 
 `AstPlanCli` takes a base AST and a delta (a commit range, a PR diff, or the
@@ -82,7 +100,8 @@ java -cp "target/classes:$(cat cp.txt)" org.hl7.fhir.igtools.ast.AstPlanCli \
    changed resource, transitively. `loadFromCache` is what the rebuilt set
    depends on. A deleted file's resources are listed under `remove`, and their
    dependents are rebuilt.
-4. **Decision.** `incremental`, or `full` with `fullBuildBecause`. A cone
+4. **Decision.** `incremental`, or `full` with `fullBuildBecause`. **While the
+   guard is on, the written decision is always `full`** (see above). A cone
    above `-threshold` of the IG (default 40%) is a full build, because a full
    build costs about the same and is simpler.
 
@@ -90,7 +109,10 @@ java -cp "target/classes:$(cat cp.txt)" org.hl7.fhir.igtools.ast.AstPlanCli \
 and a rebuilt resource can gain edges the base did not have. W7 must
 recompute the cone after rebuilding and repeat until it stops growing.
 
-## Incremental rebuild (W7), UNTESTED END TO END
+## Incremental rebuild (W7), UNTESTED END TO END, and GUARDED
+
+While the guard is on, step 1 always decides `full` and steps 2 to 7 do not
+run.
 
 `IncrementalBuildCli -ast <base> -ig <dir> -out <dir> [-head <rev> | -staged] [-cache-folder <dir>]`
 

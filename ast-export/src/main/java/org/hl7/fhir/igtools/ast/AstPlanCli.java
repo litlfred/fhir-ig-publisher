@@ -12,6 +12,10 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
  *
  * <p>Writes the incremental plan for a delta against a base AST. {@code -base}
  * defaults to the AST's own {@code inputs.sourceRevision}. Builds nothing.
+ *
+ * <p>While {@link IncrementalPlan#INCREMENTAL_GUARD} is on, the written
+ * {@code decision} is always {@code full}; the computed one is kept as
+ * {@code computedDecision}.
  */
 public class AstPlanCli {
 
@@ -43,6 +47,7 @@ public class AstPlanCli {
     String fu = AstExportCli.param(args, "-fsh-users");
     JsonObject plan = new IncrementalPlan(Path.of(ast), fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)))
         .plan(delta, threshold);
+    IncrementalPlan.guard(plan);
     plan.add("base", base);
     plan.add("head", head == null ? "(staged)" : head);
     String json = JsonParser.compose(plan, true);

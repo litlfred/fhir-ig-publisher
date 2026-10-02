@@ -174,4 +174,20 @@ class IncrementalPlanTest {
     assertEquals("incremental", p.asString("decision"));
     assertEquals(List.of(PD), list(p, "seeds"));
   }
+
+  @Test
+  void theGuardDecidesFullAndKeepsTheComputedPlanForReview() throws Exception {
+    JsonObject p = IncrementalPlan.guard(plan("M\tinput/fsh/logic/PD.fsh", null, 0.4), true);
+    assertEquals("full", p.asString("decision"));
+    assertEquals("incremental", p.asString("computedDecision"));
+    assertTrue(list(p, "fullBuildBecause").contains(IncrementalPlan.GUARD_REASON));
+    assertEquals(List.of(PD), list(p, "rebuild"), "the plan itself is still written");
+  }
+
+  @Test
+  void theGuardIsOn() throws Exception {
+    // Lifted only by the owner, after review: see IncrementalPlan.INCREMENTAL_GUARD.
+    assertTrue(IncrementalPlan.INCREMENTAL_GUARD);
+    assertEquals("full", IncrementalPlan.guard(plan("M\tinput/fsh/logic/PD.fsh", null, 0.4)).asString("decision"));
+  }
 }

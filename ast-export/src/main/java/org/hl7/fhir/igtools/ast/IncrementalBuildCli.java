@@ -33,6 +33,10 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
  *       resources that were not rebuilt, rebuild those and merge again.</li>
  * </ol>
  *
+ * <p><b>Guarded.</b> While {@link IncrementalPlan#INCREMENTAL_GUARD} is on,
+ * every run takes the full-build branch; the plan is still written to
+ * {@code <work>/plan.json} for review.
+ *
  * <p><b>UNTESTED end to end</b> (2026-09-30): the package registry was
  * unreachable when it was written. Each piece is unit-tested alone.
  */
@@ -65,6 +69,7 @@ public class IncrementalBuildCli {
     String fu = AstExportCli.param(args, "-fsh-users");
     JsonObject plan = new IncrementalPlan(baseAst, fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)))
         .plan(delta, threshold);
+    IncrementalPlan.guard(plan);
     Files.createDirectories(work);
     Files.writeString(work.resolve("plan.json"), JsonParser.compose(plan, true));
 
