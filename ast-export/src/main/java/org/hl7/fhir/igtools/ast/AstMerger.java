@@ -127,11 +127,14 @@ public final class AstMerger {
     }
     m.add("resources", list);
     Files.writeString(outDir.resolve("manifest.json"), JsonParser.compose(m, true));
-    Path fshIndex = partialDir.resolve("fsh-index.json");
-    if (Files.exists(fshIndex)) {
-      Files.copy(fshIndex, outDir.resolve("fsh-index.json"), StandardCopyOption.REPLACE_EXISTING);
-    } else if (Files.exists(baseDir.resolve("fsh-index.json"))) {
-      Files.copy(baseDir.resolve("fsh-index.json"), outDir.resolve("fsh-index.json"), StandardCopyOption.REPLACE_EXISTING);
+    // Review of PR #8, M5: the merged AST describes HEAD, so it carries head's
+    // fsh-index, read after SUSHI ran. Without one, it carries none: the base's
+    // index would map the next delta through files that may have moved.
+    Path outIndex = outDir.resolve("fsh-index.json");
+    if (headFshIndex != null && Files.exists(headFshIndex)) {
+      Files.copy(headFshIndex, outIndex, StandardCopyOption.REPLACE_EXISTING);
+    } else {
+      Files.deleteIfExists(outIndex);
     }
 
     // Fixed point: what the merged graph says depends on what was rebuilt.

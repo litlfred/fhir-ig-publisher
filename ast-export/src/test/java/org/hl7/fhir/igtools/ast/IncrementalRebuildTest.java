@@ -269,4 +269,22 @@ class IncrementalRebuildTest {
         "x#0.0.0");
     assertTrue(Files.exists(tmp.resolve("w3/input/resources/Library-A.json")), r.copied().toString());
   }
+
+  // M5: the merged AST maps head's .fsh files, not the base's.
+
+  @Test
+  void theMergedAstCarriesHeadsFshIndex() throws Exception {
+    Path base = baseAst();
+    Path partial = tmp.resolve("partial");
+    FetchedFile f = new FetchedFile("fsh-generated/resources/PlanDefinition-PD.json");
+    f.setRelativePath("fsh-generated/resources/PlanDefinition-PD.json");
+    f.getResources().add(LogicEdgesTest.res("PlanDefinition", "PD", el("PlanDefinition",
+        val("url", X + "PlanDefinition/PD"), val("version", "1.0.0"), val("library", X + "Library/A"))));
+    new AstExporter(r -> "{}".getBytes(StandardCharsets.UTF_8)).export(List.of(f), partial, new JsonObject());
+    Path headIndex = tmp.resolve("head-fsh-index.json");
+    String head = "[{\"outputFile\": \"PlanDefinition-PD.json\", \"fshFile\": \"logic/Plans.fsh\"}]";
+    Files.writeString(headIndex, head);
+    AstMerger.merge(base, partial, Set.of(PD), Set.of(), "b", "h", null, headIndex, tmp.resolve("m"));
+    assertEquals(head, Files.readString(tmp.resolve("m/fsh-index.json")));
+  }
 }
