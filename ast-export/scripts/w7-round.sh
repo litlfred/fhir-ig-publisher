@@ -13,6 +13,9 @@ OUT="$WORK/w7"
 mkdir -p "$OUT"
 
 [ -f "$BASE/manifest.json" ] || { echo "no base AST at $BASE"; exit 1; }
+# IncrementalBuildCli refuses a dirty work tree (untracked files included);
+# the base AST lives at $IG/output-ast, so exclude it locally, never in .gitignore.
+grep -qxF 'output-ast/' "$IG/.git/info/exclude" 2>/dev/null || echo 'output-ast/' >> "$IG/.git/info/exclude"
 git -C "$IG" config user.email ci@example.invalid
 git -C "$IG" config user.name ci
 # The base AST records the IG's commit; make the delta a real commit on top.
@@ -26,7 +29,7 @@ java -cp "$CP" org.hl7.fhir.igtools.ast.AstPlanCli -ast "$BASE" -ig "$IG" -out "
 python3 - "$OUT/plan.json" <<'PY'
 import json, sys
 p = json.load(open(sys.argv[1]))
-print("decision:", p["decision"], " coneFraction:", p["coneFraction"])
+print("decision:", p["decision"], " computed:", p.get("computedDecision"), " coneFraction:", p.get("coneFraction"))
 print("seeds:", len(p["seeds"]), " rebuild:", len(p["rebuild"]), " load:", len(p["loadFromCache"]))
 for w in p["fullBuildBecause"]: print("  full because:", w)
 for f in p["files"]: print("  file:", f["path"], f["effect"], len(f["resources"]), f.get("reason", ""))

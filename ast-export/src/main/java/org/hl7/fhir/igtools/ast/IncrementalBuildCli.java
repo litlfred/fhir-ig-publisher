@@ -16,7 +16,7 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
 
 /**
  * {@code IncrementalBuildCli -ast <base> -ig <dir> -out <dir> [-head <rev> | -staged] [-work <dir>]
- * [-cache-folder <dir>] [-max-rounds 3] [-threshold 0.4] [-tx <url>]}
+ * [-cache-folder <dir>] [-fsh-users <json>] [-max-rounds 3] [-threshold 0.4] [-tx <url>]}
  *
  * <p>W7: import a base AST, plan the delta, rebuild only the cone, merge,
  * and repeat until the cone stops growing.
@@ -49,7 +49,7 @@ public class IncrementalBuildCli {
     String outArg = AstExportCli.param(args, "-out");
     if (astArg == null || igArg == null || outArg == null) {
       System.err.println("usage: IncrementalBuildCli -ast <base> -ig <dir> -out <dir> [-head <rev> | -staged] "
-          + "[-work <dir>] [-cache-folder <dir>] [-max-rounds 3] [-threshold 0.4] [-tx <url>]");
+          + "[-work <dir>] [-cache-folder <dir>] [-fsh-users <json>] [-max-rounds 3] [-threshold 0.4] [-tx <url>]");
       System.exit(2);
     }
     Path baseAst = Path.of(astArg);
