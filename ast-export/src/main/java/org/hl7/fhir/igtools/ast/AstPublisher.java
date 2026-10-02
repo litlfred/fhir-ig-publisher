@@ -37,7 +37,7 @@ public class AstPublisher extends Publisher {
   public void exportAst(Path outDir) throws IOException {
     AstFieldsAccess fields = new AstFieldsAccess(this);
     String root = fields.rootDir();
-    AstExporter exporter = new AstExporter(r -> composeJson(fields, r));
+    AstExporter exporter = new AstExporter(r -> composeJson(fields, r), Path.of(root));
     exporter.export(getFileList(), outDir, header(fields, root), upstreamEdges(fields));
     // SUSHI's own map from .fsh file to output resource, kept with the AST so
     // a later delta can be mapped even for a file that has since been deleted.

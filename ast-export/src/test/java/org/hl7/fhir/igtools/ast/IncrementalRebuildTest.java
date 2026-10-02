@@ -214,4 +214,59 @@ class IncrementalRebuildTest {
         .getJsonArray("resource");
     assertEquals(1, res.size());
   }
+
+  // B3: what the partial build did not produce is never dropped silently.
+
+  Path partialWithOnlyB() throws Exception {
+    FetchedFile f = new FetchedFile("fsh-generated/resources/Library-B.json");
+    f.setRelativePath("fsh-generated/resources/Library-B.json");
+    f.getResources().add(LogicEdgesTest.res("Library", "B",
+        el("Library", val("url", X + "Library/B"), val("version", "1.0.0"), val("name", "B"))));
+    Path partial = tmp.resolve("partial");
+    new AstExporter(r -> "{}".getBytes(StandardCharsets.UTF_8)).export(List.of(f), partial, new JsonObject());
+    return partial;
+  }
+
+  @Test
+  void aRebuildKeyThePartialBuildDidNotProduceForcesAFullBuild() throws Exception {
+    Path base = baseAst();
+    Path partial = partialWithOnlyB();
+    Path headIndex = tmp.resolve("head-fsh-index.json");
+    Files.writeString(headIndex, """
+        [{"outputFile": "Library-A.json", "fshFile": "logic/A.fsh"},
+         {"outputFile": "Library-B.json", "fshFile": "logic/B.fsh"}]
+        """);
+    assertThrows(FullBuildRequired.class, () -> AstMerger.merge(base, partial, Set.of(A, B), Set.of(), "b", "h", null,
+        headIndex, tmp.resolve("m")));
+    assertThrows(FullBuildRequired.class, () -> AstMerger.merge(base, partial, Set.of(A, B), Set.of(), "b", "h", null,
+        tmp.resolve("m2")), "no head index: nothing explains the loss");
+  }
+
+  @Test
+  void aRebuildKeyHeadNoLongerGeneratesIsRemoved() throws Exception {
+    Path base = baseAst();
+    Path partial = partialWithOnlyB();
+    Path headIndex = tmp.resolve("head-fsh-index.json");
+    Files.writeString(headIndex, """
+        [{"outputFile": "Library-B.json", "fshFile": "logic/B.fsh"}]
+        """);
+    AstMerger.merge(base, partial, Set.of(A, B), Set.of(), "b", "h", null, headIndex, tmp.resolve("m"));
+    JsonObject m = JsonParser.parseObject(Files.readString(tmp.resolve("m/manifest.json")));
+    assertEquals(1, m.getJsonObject("incremental").asInteger("removed"), "A's definition is gone at head");
+  }
+
+  @Test
+  void anAbsoluteSourceInsideTheIgIsCopiedIntoTheTemporaryIg() throws Exception {
+    Path ig = tmp.resolve("ig3");
+    Files.createDirectories(ig.resolve("input/resources"));
+    Files.writeString(ig.resolve("ig.ini"), "[IG]\nig = input/ImplementationGuide-x.json\n");
+    Files.writeString(ig.resolve("input/ImplementationGuide-x.json"), """
+        {"resourceType": "ImplementationGuide", "definition": {"resource": [{"reference": {"reference": "Library/A"}}]}}
+        """);
+    Files.writeString(ig.resolve("input/resources/Library-A.json"), "{}");
+    String abs = ig.toAbsolutePath().resolve("input/resources/Library-A.json").toString();
+    TempIgAssembler.Result r = TempIgAssembler.assemble(ig, tmp.resolve("w3"), Set.of(A), Map.of(A, abs), Set.of(),
+        "x#0.0.0");
+    assertTrue(Files.exists(tmp.resolve("w3/input/resources/Library-A.json")), r.copied().toString());
+  }
 }

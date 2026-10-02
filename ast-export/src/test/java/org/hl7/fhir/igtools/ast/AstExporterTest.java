@@ -158,4 +158,14 @@ class AstExporterTest {
     p.getInputStream().transferTo(java.io.OutputStream.nullOutputStream());
     return p.waitFor();
   }
+
+  @Test
+  void anAbsoluteStatedPathIsRecordedRelativeToTheIgRoot(@TempDir Path root) throws Exception {
+    // Upstream's SimpleFetcher.fetch sets an absolute stated path and no relative one.
+    FetchedFile f = new FetchedFile(
+        root.resolve("input/resources/Library-A.json").toString());
+    assertEquals("input/resources/Library-A.json", AstExporter.sourceOf(f, root.toAbsolutePath()));
+    FetchedFile g = new FetchedFile("/elsewhere/x.json");
+    assertEquals("/elsewhere/x.json", AstExporter.sourceOf(g, root.toAbsolutePath()));
+  }
 }

@@ -66,9 +66,12 @@ public final class TempIgAssembler {
     String igRel = igResourcePath(iniSrc);
     Files.copy(iniSrc, work.resolve("ig.ini"), StandardCopyOption.REPLACE_EXISTING);
 
+    Path absRoot = igRoot.toAbsolutePath().normalize();
     for (String key : rebuild) {
-      String src = sources.get(key);
-      if (src == null || !Files.exists(igRoot.resolve(src))) {
+      // A base AST written before the B3 fix holds absolute sources; one
+      // outside the IG cannot be copied into the temporary IG at all.
+      String src = AstExporter.relativeTo(absRoot, sources.get(key));
+      if (src == null || Path.of(src).isAbsolute() || !Files.exists(igRoot.resolve(src))) {
         missing.add(key);
         continue;
       }

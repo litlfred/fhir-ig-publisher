@@ -42,7 +42,21 @@ public final class AstMerger {
   }
 
   public static Result merge(Path baseDir, Path partialDir, Set<String> rebuild, Set<String> remove,
-      String baseRevision, String headRevision, JsonObject headInputs, Path outDir) throws IOException {
+      String baseRevision, String headRevision, JsonObject headInputs, Path outDir)
+      throws IOException, FullBuildRequired {
+    return merge(baseDir, partialDir, rebuild, remove, baseRevision, headRevision, headInputs, null, outDir);
+  }
+
+  /**
+   * @param headFshIndex SUSHI's {@code fsh-index.json} at HEAD, after SUSHI ran;
+   *                     null when the IG has no FSH
+   * @throws FullBuildRequired when a key in {@code rebuild} was not produced by
+   *         the partial build and head's fsh-index does not explain it as
+   *         removed or renamed (review of PR #8, B3)
+   */
+  public static Result merge(Path baseDir, Path partialDir, Set<String> rebuild, Set<String> remove,
+      String baseRevision, String headRevision, JsonObject headInputs, Path headFshIndex, Path outDir)
+      throws IOException, FullBuildRequired {
     JsonObject base = JsonParser.parseObject(Files.readString(baseDir.resolve("manifest.json")));
     JsonObject part = JsonParser.parseObject(Files.readString(partialDir.resolve("manifest.json")));
     Files.createDirectories(outDir);
@@ -59,6 +73,9 @@ public final class AstMerger {
       rebuilt.add(r.asString("key"));
       add(r, partialDir, outDir, headRevision, entries, list);
     }
+    Set<String> vanished = unexplainedOrVanished(base, rebuild, remove, rebuilt, headFshIndex);
+    remove = new TreeSet<>(remove);
+    remove.addAll(vanished);
     for (JsonElement je : base.getJsonArray("resources")) {
       JsonObject r = je.asJsonObject();
       String key = r.asString("key");
@@ -122,6 +139,54 @@ public final class AstMerger {
     cone.removeAll(rebuilt);
     cone.removeAll(rebuild);
     return new Result(list.size(), rebuilt, cone);
+  }
+
+  /**
+   * Keys in {@code rebuild} the partial build did not produce. Each must be
+   * explained by head's fsh-index: its base source is a SUSHI output that
+   * head no longer generates, so its .fsh definition was removed or renamed.
+   * Those are returned, to be removed. Any other is a resource the rebuild
+   * lost, and the whole round is abandoned for a full build.
+   */
+  static Set<String> unexplainedOrVanished(JsonObject base, Set<String> rebuild, Set<String> remove,
+      Set<String> rebuilt, Path headFshIndex) throws IOException, FullBuildRequired {
+    Set<String> missing = new TreeSet<>(rebuild);
+    missing.removeAll(rebuilt);
+    missing.removeAll(remove);
+    if (missing.isEmpty()) {
+      return missing;
+    }
+    Set<String> headOutputs = new TreeSet<>();
+    boolean haveIndex = headFshIndex != null && Files.exists(headFshIndex);
+    if (haveIndex) {
+      for (JsonElement je : (JsonArray) JsonParser.parse(Files.readString(headFshIndex))) {
+        String of = s(je.asJsonObject(), "outputFile");
+        if (of != null) {
+          headOutputs.add(IncrementalPlan.norm(of));
+        }
+      }
+    }
+    Set<String> unexplained = new TreeSet<>();
+    for (JsonElement je : base.getJsonArray("resources")) {
+      JsonObject r = je.asJsonObject();
+      String key = r.asString("key");
+      if (!missing.contains(key)) {
+        continue;
+      }
+      String src = s(r, "source");
+      String norm = src == null ? null : IncrementalPlan.norm(src);
+      int at = norm == null ? -1 : norm.lastIndexOf("fsh-generated/resources/");
+      boolean gone = haveIndex && at >= 0
+          && !headOutputs.contains(norm.substring(at + "fsh-generated/resources/".length()));
+      if (!gone) {
+        unexplained.add(key);
+      }
+    }
+    if (!unexplained.isEmpty()) {
+      throw new FullBuildRequired("the partial build did not produce " + unexplained.size() + " resource(s) it was "
+          + "asked to rebuild, and head's fsh-index does not explain them as removed or renamed: " + unexplained);
+    }
+    return missing;
   }
 
   private static void add(JsonObject r, Path from, Path outDir, String builtAt, List<AstExporter.Entry> entries,

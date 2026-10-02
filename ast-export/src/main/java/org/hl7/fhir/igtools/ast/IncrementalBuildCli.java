@@ -82,6 +82,16 @@ public class IncrementalBuildCli {
       fullBuild(ig, out, JsonParser.compose(plan.getJsonArray("fullBuildBecause")));
       return;
     }
+    try {
+      incremental(args, plan, baseAst, ig, out, work, cacheFolder, maxRounds, tx, baseRev, staged, head);
+    } catch (FullBuildRequired e) {
+      fullBuild(ig, out, e.getMessage());
+    }
+  }
+
+  /** Steps 2 to 7. Anything it cannot account for throws {@link FullBuildRequired}. */
+  static void incremental(String[] args, JsonObject plan, Path baseAst, Path ig, Path out, Path work,
+      String cacheFolder, int maxRounds, String tx, String baseRev, boolean staged, String head) throws Exception {
     String headRev = staged ? "staged-on-" + Toolchain.sourceRevision(ig.toString())
         : Toolchain.run(ig.toString(), "git", "rev-parse", head);
 
@@ -142,7 +152,7 @@ public class IncrementalBuildCli {
 
       Path merged = work.resolve("merged-r" + round);
       AstMerger.Result r = AstMerger.merge(currentBase, partial, rebuild, remove, baseRev, headRev, headInputs,
-          merged);
+          ig.resolve(FSH_INDEX), merged);
       currentBase = merged;
       remove = Set.of();
       newSources = Set.of();

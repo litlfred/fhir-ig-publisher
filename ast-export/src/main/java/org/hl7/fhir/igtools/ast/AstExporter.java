@@ -39,9 +39,16 @@ public class AstExporter {
   }
 
   private final Composer composer;
+  /** The IG root, against which an absolute source path is made relative; may be null. */
+  private final Path root;
 
   public AstExporter(Composer composer) {
+    this(composer, null);
+  }
+
+  public AstExporter(Composer composer, Path root) {
     this.composer = composer;
+    this.root = root == null ? null : root.toAbsolutePath().normalize();
   }
 
   /**
@@ -181,7 +188,7 @@ public class AstExporter {
     Path target = outDir.resolve(rel);
     Files.createDirectories(target.getParent());
     Files.write(target, composer.compose(r));
-    return new Entry(key, canonical, version, type, id, name, rel, sourceOf(f));
+    return new Entry(key, canonical, version, type, id, name, rel, sourceOf(f, root));
   }
 
   /** {@code <id>--<first 8 hex of sha256(key)>.json}. */
@@ -195,9 +202,31 @@ public class AstExporter {
     }
   }
 
-  /** The file a resource came from, relative to the IG root when the fetcher recorded that. */
-  static String sourceOf(FetchedFile f) {
-    return f.getRelativePath() != null ? f.getRelativePath() : f.getStatedPath();
+  /**
+   * The file a resource came from, relative to the IG root. Upstream's
+   * {@code SimpleFetcher.fetch} records an ABSOLUTE stated path and no
+   * relative one for a resource, so an absolute path under {@code root} is
+   * made relative here; one outside it is kept as it is. (Review of PR #8,
+   * B3: an absolute source made {@code TempIgAssembler}'s copy a no-op.)
+   */
+  static String sourceOf(FetchedFile f, Path root) {
+    String s = f.getRelativePath() != null ? f.getRelativePath() : f.getStatedPath();
+    return relativeTo(root, s);
+  }
+
+  /** {@code s} relative to {@code root}, with '/' separators, when it is an absolute path under it. */
+  static String relativeTo(Path root, String s) {
+    if (s == null || root == null) {
+      return s;
+    }
+    Path p = Path.of(s);
+    if (p.isAbsolute()) {
+      Path n = p.normalize();
+      if (n.startsWith(root)) {
+        return root.relativize(n).toString().replace('\\', '/');
+      }
+    }
+    return s;
   }
 
   /** The primitive value of a direct child, or null. Walks the children rather than asking by name, so it needs no Property. */
