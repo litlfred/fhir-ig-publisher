@@ -35,11 +35,19 @@ public class AstExportCli {
       p.getSettings().setNoSushi(true);
     }
     p.getSettings().setCacheOption(PublisherUtils.CacheOption.LEAVE);
+    // The inputs, and so the digest, BEFORE the build writes anything under input/.
+    p.recordInputs(igRoot(ig).toString());
     p.execute();
     String out = param(args, "-ast-out");
     Path outDir = out != null ? Path.of(out) : Path.of(Utilities.path(ig, "output-ast"));
     p.exportAst(outDir);
     System.out.println("AST written to " + outDir.toAbsolutePath());
+  }
+
+  /** The IG's root directory: {@code -ig} names it, or names a file inside it (ig.ini). */
+  static Path igRoot(String ig) {
+    Path p = Path.of(ig).toAbsolutePath().normalize();
+    return java.nio.file.Files.isDirectory(p) ? p : p.getParent();
   }
 
   static String param(String[] args, String name) {

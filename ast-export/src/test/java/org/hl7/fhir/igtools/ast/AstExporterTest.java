@@ -152,6 +152,38 @@ class AstExporterTest {
     assertNotEquals(clean, InputDigest.of(ig), "an untracked, unignored file is");
   }
 
+  /**
+   * The inputs are recorded BEFORE the build. A file the build then writes
+   * under input/ (git does not ignore it) must not reach the recorded digest,
+   * or no clean clone of the same commit can verify the AST (bean mac1).
+   */
+  @Test
+  void inputsRecordedBeforeTheBuildIgnoreWhatTheBuildWrites(@TempDir Path ig) throws Exception {
+    Files.writeString(ig.resolve("sushi-config.yaml"), "id: x\n");
+    Files.createDirectories(ig.resolve("input/fsh"));
+    Files.writeString(ig.resolve("input/fsh/a.fsh"), "Profile: A\n");
+    assumeTrue(git(ig, "init", "-q") == 0, "git is not available");
+    assumeTrue(git(ig, "-c", "user.email=t@t", "-c", "user.name=t", "add", ".") == 0);
+    assumeTrue(git(ig, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base") == 0);
+    String clean = InputDigest.of(ig);
+
+    AstPublisher p = new AstPublisher();
+    p.recordInputs(ig.toString());
+    // What a build leaves behind: an untracked, unignored file under input/.
+    Files.createDirectories(ig.resolve("input/includes"));
+    Files.writeString(ig.resolve("input/includes/generated.md"), "written by the build\n");
+
+    assertEquals(clean, p.recordedInputs().asString("inputDigest"), "recorded before the build");
+    assertNotEquals(clean, InputDigest.of(ig), "after the build the tree differs, which is why");
+  }
+
+  @Test
+  void igRootIsTheDirectoryOrTheConfigFilesParent(@TempDir Path ig) throws Exception {
+    Files.writeString(ig.resolve("ig.ini"), "[IG]\n");
+    assertEquals(ig.toAbsolutePath().normalize(), AstExportCli.igRoot(ig.toString()));
+    assertEquals(ig.toAbsolutePath().normalize(), AstExportCli.igRoot(ig.resolve("ig.ini").toString()));
+  }
+
   private static int git(Path dir, String... args) throws Exception {
     List<String> cmd = new java.util.ArrayList<>(List.of("git"));
     cmd.addAll(List.of(args));
