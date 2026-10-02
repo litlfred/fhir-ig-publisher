@@ -2,6 +2,7 @@ package org.hl7.fhir.igtools.ast;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -167,5 +168,23 @@ class AstExporterTest {
     assertEquals("input/resources/Library-A.json", AstExporter.sourceOf(f, root.toAbsolutePath()));
     FetchedFile g = new FetchedFile("/elsewhere/x.json");
     assertEquals("/elsewhere/x.json", AstExporter.sourceOf(g, root.toAbsolutePath()));
+  }
+
+  @Test
+  void theDigestSaysWhichRuleChoseItsFiles(@TempDir Path dir) throws Exception {
+    Files.createDirectories(dir.resolve("plain/input"));
+    Files.writeString(dir.resolve("plain/input/a.fsh"), "a");
+    InputDigest.Result walk = InputDigest.compute(dir.resolve("plain"));
+    // A temp dir may itself sit inside some git work tree; only assert what this one is.
+    if ("walk".equals(walk.mode())) {
+      assertNotNull(walk.reason(), "a walk always says why");
+    }
+    Path repo = dir.resolve("repo");
+    Files.createDirectories(repo.resolve("input"));
+    Files.writeString(repo.resolve("input/a.fsh"), "a");
+    AstDeltaTest.git(repo, "init", "-q");
+    InputDigest.Result git = InputDigest.compute(repo);
+    assertEquals("git", git.mode());
+    assertEquals(InputDigest.of(repo), git.digest());
   }
 }

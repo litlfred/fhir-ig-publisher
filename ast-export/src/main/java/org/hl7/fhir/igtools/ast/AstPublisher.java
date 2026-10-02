@@ -97,6 +97,13 @@ public class AstPublisher extends Publisher {
     if (!inputs.has("sourceRevision")) {
       h.add("inputsUnknown", new JsonObject().add("sourceRevision", "the IG root is not a git checkout"));
     }
+    // Beside inputs, never inside it: inputs is exactly CompiledInputsSchema.
+    InputDigest.Result d = InputDigest.compute(Path.of(root));
+    JsonObject how = new JsonObject().add("mode", d.mode());
+    if (d.reason() != null) {
+      how.add("reason", d.reason());
+    }
+    h.add("inputDigestMode", how);
     return h;
   }
 

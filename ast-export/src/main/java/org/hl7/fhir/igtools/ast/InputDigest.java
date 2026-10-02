@@ -43,16 +43,40 @@ public final class InputDigest {
   private InputDigest() {
   }
 
+  /**
+   * A digest and HOW its file set was chosen: {@code git} (what git counts as
+   * the work tree) or {@code walk} (every file), with the reason for a walk.
+   */
+  public record Result(String digest, String mode, String reason) {
+  }
+
   public static String of(Path igRoot) throws IOException {
+    return compute(igRoot).digest();
+  }
+
+  /**
+   * The digest, and which rule chose its files. A walk happens only when
+   * {@code igRoot} is NOT in a git work tree, or git cannot be run, and the
+   * reason is returned; a git failure INSIDE a work tree is an error rather
+   * than a silent fall back to a different file set (review of PR #8).
+   */
+  public static Result compute(Path igRoot) throws IOException {
+    String[] why = new String[1];
+    List<Path> files = gitTreeFiles(igRoot, why);
+    String mode = "git";
+    if (files == null) {
+      files = walkInputs(igRoot);
+      mode = "walk";
+    }
+    return new Result(digest(igRoot, files), mode, why[0]);
+  }
+
+  private static String digest(Path igRoot, List<Path> files) throws IOException {
     MessageDigest md;
     try {
       md = MessageDigest.getInstance("SHA-256");
     } catch (NoSuchAlgorithmException e) {
       throw new IllegalStateException(e);
-    }
-    List<Path> files = gitTreeFiles(igRoot);
-    if (files == null) {
-      files = walkInputs(igRoot);
     }
     files.sort(null);
     for (Path f : files) {
@@ -82,19 +106,30 @@ public final class InputDigest {
 
   /**
    * The input files git counts as the work tree, or {@code null} when
-   * {@code igRoot} is not inside one or git cannot be run.
+   * {@code igRoot} is not inside one or git cannot be run; {@code why[0]}
+   * then says which.
+   *
+   * @throws IOException when {@code igRoot} IS in a work tree but git cannot
+   *         list it: hashing a different file set would be a silent change of rule
    */
-  static List<Path> gitTreeFiles(Path igRoot) {
+  static List<Path> gitTreeFiles(Path igRoot, String[] why) throws IOException {
     try {
-      String inside = run(igRoot, "git", "rev-parse", "--is-inside-work-tree");
+      String inside;
+      try {
+        inside = run(igRoot, "git", "rev-parse", "--is-inside-work-tree");
+      } catch (IOException e) {
+        why[0] = "git cannot be run: " + e.getMessage();
+        return null;
+      }
       if (inside == null || !inside.trim().equals("true")) {
+        why[0] = "not inside a git work tree";
         return null;
       }
       List<String> cmd = new ArrayList<>(List.of("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--"));
       cmd.addAll(INPUTS);
       String out = run(igRoot, cmd.toArray(new String[0]));
       if (out == null) {
-        return null;
+        throw new IOException("git ls-files failed inside the work tree at " + igRoot);
       }
       Set<Path> files = new LinkedHashSet<>();
       for (String rel : out.split("\0")) {
@@ -108,11 +143,9 @@ public final class InputDigest {
         }
       }
       return new ArrayList<>(files);
-    } catch (IOException e) {
-      return null;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      return null;
+      throw new IOException("interrupted while listing the work tree", e);
     }
   }
 
