@@ -66,6 +66,12 @@ public class IncrementalBuildCli {
     String baseRev = sourceRevision(baseManifest);
     boolean staged = AstExportCli.has(args, "-staged");
     String head = staged ? null : orElse(AstExportCli.param(args, "-head"), "HEAD");
+    String mismatch = workTreeMismatch(ig, head);
+    if (mismatch != null) {
+      System.err.println("Refusing: " + mismatch + ". SUSHI and the Publisher read the WORK TREE, so it must be "
+          + "exactly what the plan diffs. Commit or stash, or check out the head revision.");
+      System.exit(2);
+    }
     String fu = AstExportCli.param(args, "-fsh-users");
     JsonObject plan;
     try {
@@ -168,6 +174,48 @@ public class IncrementalBuildCli {
     }
     System.err.println("Did not converge in " + maxRounds + " rounds. Run a full build.");
     System.exit(3);
+  }
+
+  /**
+   * Why the work tree is not what the plan diffs, or null when it is. Review
+   * of PR #8, M2: the plan diffs base..head, but SUSHI, TempIgAssembler and
+   * the head inputs read the work tree. The smaller safe option is taken:
+   * refuse, rather than build in a separate {@code git worktree}.
+   *
+   * <ul>
+   *   <li>{@code head} given: the work tree is clean (untracked, non-ignored
+   *       files included) and {@code HEAD} is {@code head}'s commit;</li>
+   *   <li>{@code head} null ({@code -staged}): no unstaged edits to tracked
+   *       files and no untracked, non-ignored files.</li>
+   * </ul>
+   */
+  static String workTreeMismatch(Path ig, String head) {
+    String dir = ig.toString();
+    if (head == null) {
+      Toolchain.Exec unstaged = Toolchain.exec(dir, "git", "diff", "--quiet");
+      if (unstaged.exit() != 0) {
+        return unstaged.exit() == 1 ? "-staged, but the work tree has unstaged edits"
+            : "git diff failed: " + unstaged.err().trim();
+      }
+      Toolchain.Exec others = Toolchain.exec(dir, "git", "ls-files", "--others", "--exclude-standard");
+      if (!others.ok()) {
+        return "git ls-files failed: " + others.err().trim();
+      }
+      return others.out().isBlank() ? null : "-staged, but the work tree has untracked files";
+    }
+    Toolchain.Exec status = Toolchain.exec(dir, "git", "status", "--porcelain", "--untracked-files=normal");
+    if (!status.ok()) {
+      return "git status failed: " + status.err().trim();
+    }
+    if (!status.out().isBlank()) {
+      return "the work tree has uncommitted changes";
+    }
+    String at = Toolchain.run(dir, "git", "rev-parse", "--verify", "HEAD^{commit}");
+    String want = Toolchain.run(dir, "git", "rev-parse", "--verify", head + "^{commit}");
+    if (want == null) {
+      return "-head " + head + " is not a commit here";
+    }
+    return want.equals(at) ? null : "HEAD is " + at + ", not -head " + head + " (" + want + ")";
   }
 
   static void fullBuild(Path ig, Path out, String because) throws Exception {
