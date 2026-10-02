@@ -3,6 +3,7 @@ package org.hl7.fhir.igtools.ast;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -126,5 +127,35 @@ class AstExporterTest {
     Files.writeString(ig.resolve("input/pagecontent/index.md"), "# Hi\n");
     Files.writeString(ig.resolve("output/x.html"), "noise");
     assertEquals("58871352384745e1d7fd68f7ea918b0e2febbd86cf36a9cb5f0c7ce9d13a82f1", InputDigest.of(ig));
+  }
+
+  /**
+   * The same case folio-assistant's {@code ig-ast.test.ts} asserts: inside a
+   * git work tree an ignored file is not an input, an untracked one is.
+   */
+  @Test
+  void inputDigestInAGitWorkTreeIgnoresIgnoredFiles(@TempDir Path ig) throws Exception {
+    Files.writeString(ig.resolve("sushi-config.yaml"), "id: x\n");
+    Files.createDirectories(ig.resolve("input/fsh"));
+    Files.writeString(ig.resolve("input/fsh/a.fsh"), "Profile: A\n");
+    Files.writeString(ig.resolve(".gitignore"), ".DS_Store\n");
+    assumeTrue(git(ig, "init", "-q") == 0, "git is not available");
+    assumeTrue(git(ig, "-c", "user.email=t@t", "-c", "user.name=t", "add", ".") == 0);
+    assumeTrue(git(ig, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base") == 0);
+    String clean = InputDigest.of(ig);
+
+    Files.writeString(ig.resolve("input/.DS_Store"), "finder noise");
+    assertEquals(clean, InputDigest.of(ig), "an ignored file is not an input");
+
+    Files.writeString(ig.resolve("input/fsh/b.fsh"), "Profile: B\n");
+    assertNotEquals(clean, InputDigest.of(ig), "an untracked, unignored file is");
+  }
+
+  private static int git(Path dir, String... args) throws Exception {
+    List<String> cmd = new java.util.ArrayList<>(List.of("git"));
+    cmd.addAll(List.of(args));
+    Process p = new ProcessBuilder(cmd).directory(dir.toFile()).redirectErrorStream(true).start();
+    p.getInputStream().transferTo(java.io.OutputStream.nullOutputStream());
+    return p.waitFor();
   }
 }
