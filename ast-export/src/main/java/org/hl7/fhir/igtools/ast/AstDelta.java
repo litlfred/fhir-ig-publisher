@@ -40,16 +40,47 @@ public final class AstDelta {
   }
 
   /**
+   * Parses {@code git diff --name-status -z} output: NUL-separated fields, so
+   * a path holding a tab, a newline or a quote is read as git wrote it rather
+   * than C-quoted.
+   */
+  public static List<Change> parseNameStatusZ(String text) {
+    List<Change> out = new ArrayList<>();
+    String[] f = text.split("\0", -1);
+    int i = 0;
+    while (i < f.length && !f[i].isEmpty()) {
+      char s = f[i].charAt(0);
+      if (s == 'R' || s == 'C') {
+        out.add(new Change(s == 'R' ? 'R' : 'A', f[i + 2], s == 'R' ? f[i + 1] : null));
+        i += 3;
+      } else {
+        out.add(new Change(s == 'T' ? 'M' : s, f[i + 1], null));
+        i += 2;
+      }
+    }
+    return out;
+  }
+
+  /**
    * The delta between {@code base} and {@code head} in {@code igRoot}, or
    * between {@code base} and the staged index when {@code head} is null.
+   *
+   * <p>A git failure (a base revision missing from a shallow clone, a path
+   * that is not a repository) is NOT an empty delta: it throws, with git's
+   * own stderr as the reason, and the caller builds in full. An empty list
+   * means git ran and found no change. (Review of PR #8, B1.)
    */
-  public static List<Change> fromGit(String igRoot, String base, String head) {
-    String out = head == null
-        ? Toolchain.run(igRoot, "git", "diff", "--name-status", "-M", "--cached", base)
-        : Toolchain.run(igRoot, "git", "diff", "--name-status", "-M", base, head);
-    if (out == null) {
-      return List.of();
+  public static List<Change> fromGit(String igRoot, String base, String head) throws FullBuildRequired {
+    if (base == null) {
+      throw new FullBuildRequired("no base revision: the base AST records no inputs.sourceRevision");
     }
-    return parseNameStatus(out);
+    Toolchain.Exec e = head == null
+        ? Toolchain.exec(igRoot, "git", "diff", "--name-status", "-z", "-M", "--cached", base, "--")
+        : Toolchain.exec(igRoot, "git", "diff", "--name-status", "-z", "-M", base, head, "--");
+    if (!e.ok()) {
+      throw new FullBuildRequired("git diff " + base + ".." + (head == null ? "(staged)" : head) + " failed (exit "
+          + e.exit() + "): " + e.err().trim());
+    }
+    return parseNameStatusZ(e.out());
   }
 }

@@ -43,10 +43,15 @@ public class AstPlanCli {
     }
     String t = AstExportCli.param(args, "-threshold");
     double threshold = t == null ? IncrementalPlan.DEFAULT_THRESHOLD : Double.parseDouble(t);
-    List<AstDelta.Change> delta = AstDelta.fromGit(ig, base, head);
     String fu = AstExportCli.param(args, "-fsh-users");
-    JsonObject plan = new IncrementalPlan(Path.of(ast), fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)))
-        .plan(delta, threshold);
+    JsonObject plan;
+    try {
+      List<AstDelta.Change> delta = AstDelta.fromGit(ig, base, head);
+      plan = new IncrementalPlan(Path.of(ast), fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)))
+          .plan(delta, threshold);
+    } catch (FullBuildRequired e) {
+      plan = IncrementalPlan.forcedFull(e.getMessage());
+    }
     IncrementalPlan.guard(plan);
     plan.add("base", base);
     plan.add("head", head == null ? "(staged)" : head);

@@ -62,20 +62,24 @@ public class IncrementalBuildCli {
     String tx = AstExportCli.param(args, "-tx");
 
     JsonObject baseManifest = JsonParser.parseObject(Files.readString(baseAst.resolve("manifest.json")));
-    String baseRev = baseManifest.getJsonObject("inputs").asString("sourceRevision");
+    String baseRev = sourceRevision(baseManifest);
     boolean staged = AstExportCli.has(args, "-staged");
     String head = staged ? null : orElse(AstExportCli.param(args, "-head"), "HEAD");
-    List<AstDelta.Change> delta = AstDelta.fromGit(ig.toString(), baseRev, head);
     String fu = AstExportCli.param(args, "-fsh-users");
-    JsonObject plan = new IncrementalPlan(baseAst, fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)))
-        .plan(delta, threshold);
+    JsonObject plan;
+    try {
+      List<AstDelta.Change> delta = AstDelta.fromGit(ig.toString(), baseRev, head);
+      plan = new IncrementalPlan(baseAst, fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)))
+          .plan(delta, threshold);
+    } catch (FullBuildRequired e) {
+      plan = IncrementalPlan.forcedFull(e.getMessage());
+    }
     IncrementalPlan.guard(plan);
     Files.createDirectories(work);
     Files.writeString(work.resolve("plan.json"), JsonParser.compose(plan, true));
 
     if ("full".equals(plan.asString("decision"))) {
-      System.out.println("Full build: " + JsonParser.compose(plan.getJsonArray("fullBuildBecause")));
-      AstExportCli.main(new String[] {"-ig", ig.toString(), "-ast-out", out.toString()});
+      fullBuild(ig, out, JsonParser.compose(plan.getJsonArray("fullBuildBecause")));
       return;
     }
     String headRev = staged ? "staged-on-" + Toolchain.sourceRevision(ig.toString())
@@ -151,6 +155,19 @@ public class IncrementalBuildCli {
     }
     System.err.println("Did not converge in " + maxRounds + " rounds. Run a full build.");
     System.exit(3);
+  }
+
+  static void fullBuild(Path ig, Path out, String because) throws Exception {
+    System.out.println("Full build: " + because);
+    AstExportCli.main(new String[] {"-ig", ig.toString(), "-ast-out", out.toString()});
+  }
+
+  /** {@code inputs.sourceRevision}, or null when the manifest records none. */
+  static String sourceRevision(JsonObject manifest) {
+    JsonObject inputs = manifest.has("inputs") && manifest.get("inputs").isJsonObject()
+        ? manifest.getJsonObject("inputs") : null;
+    return inputs == null || !inputs.has("sourceRevision") || inputs.get("sourceRevision").isJsonNull()
+        ? null : inputs.asString("sourceRevision");
   }
 
   static Set<String> strings(JsonObject o, String name) {

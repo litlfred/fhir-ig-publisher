@@ -305,6 +305,23 @@ public final class IncrementalPlan {
   }
 
   /**
+   * A plan that decides {@code full} before any file is classified: the
+   * delta itself could not be determined.
+   */
+  public static JsonObject forcedFull(String reason) {
+    JsonObject p = new JsonObject();
+    p.add("$schema", "ig-ast-plan/v1");
+    p.add("decision", "full");
+    JsonArray why = new JsonArray();
+    why.add(reason);
+    p.add("fullBuildBecause", why);
+    for (String n : List.of("seeds", "rebuild", "remove", "loadFromCache", "files")) {
+      p.add(n, new JsonArray());
+    }
+    return p;
+  }
+
+  /**
    * The ONE place the {@link #INCREMENTAL_GUARD} is applied: both
    * {@code AstPlanCli} and {@code IncrementalBuildCli} pass every plan through
    * here before writing or acting on it. The computed decision is kept as
