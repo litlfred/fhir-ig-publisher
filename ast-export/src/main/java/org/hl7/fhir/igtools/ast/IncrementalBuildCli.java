@@ -116,11 +116,12 @@ public class IncrementalBuildCli {
       Map<String, String> sources = sources(currentBase);
       Set<String> libraries = libraryNames(currentBase, rebuild);
       Path roundDir = work.resolve("r" + round);
-      TempIgAssembler.Result assembled = TempIgAssembler.assemble(ig, roundDir, rebuild, sources, libraries,
-          name + "#" + version);
+      List<String> newFiles = new java.util.ArrayList<>();
       for (String src : newSources) {
-        copyNewSourceOutputs(ig, roundDir, src);
+        newFiles.addAll(copyNewSourceOutputs(ig, roundDir, src));
       }
+      TempIgAssembler.Result assembled = TempIgAssembler.assemble(ig, roundDir, rebuild, sources, libraries,
+          name + "#" + version, newFiles);
       System.out.println("Round " + round + ": rebuilding " + rebuild.size() + " (" + assembled.missing().size()
           + " without a source), loading " + load.size() + " from cache");
 
@@ -212,22 +213,56 @@ public class IncrementalBuildCli {
     return s;
   }
 
-  /** A new .fsh file's outputs, found through head's fsh-index.json. */
-  static void copyNewSourceOutputs(Path ig, Path roundDir, String fshPath) throws Exception {
-    Path idx = ig.resolve("fsh-generated/fsh-index.json");
-    if (!Files.exists(idx)) {
-      return;
-    }
-    for (JsonElement je : (org.hl7.fhir.utilities.json.model.JsonArray) JsonParser.parse(Files.readString(idx))) {
-      JsonObject o = je.asJsonObject();
-      String f = o.asString("fshFile");
-      if (fshPath.endsWith(f)) {
-        String rel = "fsh-generated/resources/" + o.asString("outputFile");
-        Path t = roundDir.resolve(rel);
-        Files.createDirectories(t.getParent());
-        Files.copy(ig.resolve(rel), t, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+  /** Where SUSHI writes its map from .fsh file to output resource (as AstPublisher reads it). */
+  static final String FSH_INDEX = "fsh-generated/data/fsh-index.json";
+
+  /**
+   * Copies a NEW_SOURCE's resource files into the round's temporary IG and
+   * returns their paths, relative to the IG root.
+   *
+   * <ul>
+   *   <li>a {@code .fsh} file: its outputs, through head's {@value #FSH_INDEX};</li>
+   *   <li>a {@code .json} or {@code .xml} under {@code input/}: the file itself;</li>
+   *   <li>anything else, or a source that yields no resource file: a full build.</li>
+   * </ul>
+   *
+   * <p>Review of PR #8, B2: this read {@code fsh-generated/fsh-index.json},
+   * which SUSHI does not write, returned silently when it was missing, and
+   * never copied a new non-FSH source at all.
+   */
+  static List<String> copyNewSourceOutputs(Path ig, Path roundDir, String srcPath) throws Exception {
+    String path = IncrementalPlan.norm(srcPath);
+    List<String> files = new java.util.ArrayList<>();
+    if (path.endsWith(".fsh")) {
+      Path idx = ig.resolve(FSH_INDEX);
+      if (!Files.exists(idx)) {
+        throw new FullBuildRequired("new FSH file " + path + ": SUSHI wrote no " + FSH_INDEX);
       }
+      for (JsonElement je : (org.hl7.fhir.utilities.json.model.JsonArray) JsonParser.parse(Files.readString(idx))) {
+        JsonObject o = je.asJsonObject();
+        String f = IncrementalPlan.norm(o.asString("fshFile"));
+        if (path.equals(f) || path.endsWith("/" + f)) {
+          files.add("fsh-generated/resources/" + o.asString("outputFile"));
+        }
+      }
+    } else if (path.startsWith("input/") && (path.endsWith(".json") || path.endsWith(".xml"))) {
+      files.add(path);
+    } else {
+      throw new FullBuildRequired("new file " + path + ": not a resource file, and what it feeds is known only "
+          + "after a build");
     }
+    if (files.isEmpty()) {
+      throw new FullBuildRequired("new source " + path + " yields no resource in " + FSH_INDEX);
+    }
+    for (String rel : files) {
+      if (!Files.isRegularFile(ig.resolve(rel))) {
+        throw new FullBuildRequired("new source " + path + ": " + rel + " does not exist");
+      }
+      Path t = roundDir.resolve(rel);
+      Files.createDirectories(t.getParent());
+      Files.copy(ig.resolve(rel), t, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+    return files;
   }
 
   static JsonObject manifest(Path ast) throws Exception {

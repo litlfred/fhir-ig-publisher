@@ -45,8 +45,21 @@ public final class TempIgAssembler {
    */
   public static Result assemble(Path igRoot, Path work, Set<String> rebuild, java.util.Map<String, String> sources,
       Set<String> libraryNames, String cachePackage) throws IOException {
+    return assemble(igRoot, work, rebuild, sources, libraryNames, cachePackage, List.of());
+  }
+
+  /**
+   * @param newFiles resource files of NEW sources, relative to igRoot, already
+   *                 in {@code work}; listed in the temporary IG like the rest
+   */
+  public static Result assemble(Path igRoot, Path work, Set<String> rebuild, java.util.Map<String, String> sources,
+      Set<String> libraryNames, String cachePackage, List<String> newFiles) throws IOException {
     Files.createDirectories(work);
     List<String> copied = new ArrayList<>();
+    for (String f : newFiles) {
+      copy(igRoot, work, f);
+      copied.add(f);
+    }
     List<String> missing = new ArrayList<>();
 
     Path iniSrc = igRoot.resolve("ig.ini");

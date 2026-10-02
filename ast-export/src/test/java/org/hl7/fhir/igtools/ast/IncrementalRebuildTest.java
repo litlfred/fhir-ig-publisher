@@ -9,6 +9,7 @@ import static org.hl7.fhir.igtools.ast.LogicEdgesTest.el;
 import static org.hl7.fhir.igtools.ast.LogicEdgesTest.val;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -151,5 +152,66 @@ class IncrementalRebuildTest {
       }
     }
     throw new AssertionError(key);
+  }
+
+  // B2: SUSHI writes fsh-generated/data/fsh-index.json, and a new non-FSH source must be carried too.
+
+  Path igWithNewSources() throws Exception {
+    Path ig = tmp.resolve("ig");
+    Files.createDirectories(ig.resolve("fsh-generated/data"));
+    Files.createDirectories(ig.resolve("fsh-generated/resources"));
+    Files.createDirectories(ig.resolve("input/resources"));
+    Files.writeString(ig.resolve("fsh-generated/data/fsh-index.json"), """
+        [{"outputFile": "Library-N.json", "fshName": "N", "fshType": "Instance", "fshFile": "logic/N.fsh"}]
+        """);
+    Files.writeString(ig.resolve("fsh-generated/resources/Library-N.json"), "{}");
+    Files.writeString(ig.resolve("input/resources/Library-J.json"), "{}");
+    return ig;
+  }
+
+  @Test
+  void aNewFshFileIsFoundThroughTheIndexSushiActuallyWrites() throws Exception {
+    Path ig = igWithNewSources();
+    Path round = tmp.resolve("r1");
+    IncrementalBuildCli.copyNewSourceOutputs(ig, round, "input/fsh/logic/N.fsh");
+    assertTrue(Files.exists(round.resolve("fsh-generated/resources/Library-N.json")));
+  }
+
+  @Test
+  void aNewNonFshResourceFileIsCopiedItself() throws Exception {
+    Path ig = igWithNewSources();
+    Path round = tmp.resolve("r1");
+    IncrementalBuildCli.copyNewSourceOutputs(ig, round, "input/resources/Library-J.json");
+    assertTrue(Files.exists(round.resolve("input/resources/Library-J.json")));
+  }
+
+  @Test
+  void aNewSourceThatYieldsNoResourceForcesAFullBuild() throws Exception {
+    Path ig = igWithNewSources();
+    Path round = tmp.resolve("r1");
+    assertThrows(FullBuildRequired.class,
+        () -> IncrementalBuildCli.copyNewSourceOutputs(ig, round, "input/fsh/logic/Unindexed.fsh"));
+    assertThrows(FullBuildRequired.class,
+        () -> IncrementalBuildCli.copyNewSourceOutputs(ig, round, "input/cql/New.cql"));
+    Files.delete(ig.resolve("fsh-generated/data/fsh-index.json"));
+    assertThrows(FullBuildRequired.class,
+        () -> IncrementalBuildCli.copyNewSourceOutputs(ig, round, "input/fsh/logic/N.fsh"));
+  }
+
+  @Test
+  void newSourceFilesAreListedInTheTemporaryIg() throws Exception {
+    Path ig = tmp.resolve("ig2");
+    Files.createDirectories(ig.resolve("fsh-generated/resources"));
+    Files.writeString(ig.resolve("ig.ini"), "[IG]\nig = fsh-generated/resources/ImplementationGuide-x.ig.json\n");
+    Files.writeString(ig.resolve("fsh-generated/resources/ImplementationGuide-x.ig.json"), """
+        {"resourceType": "ImplementationGuide", "definition": {"resource": [
+          {"reference": {"reference": "Library/N"}}, {"reference": {"reference": "Patient/p0"}}]}}
+        """);
+    Files.writeString(ig.resolve("fsh-generated/resources/Library-N.json"), "{}");
+    TempIgAssembler.Result r = TempIgAssembler.assemble(ig, tmp.resolve("w"), Set.of(), Map.of(), Set.of(),
+        "x.ig.ast-cache#0.0.0-ast.abc.r1", List.of("fsh-generated/resources/Library-N.json"));
+    JsonArray res = JsonParser.parseObject(Files.readString(r.igResource())).getJsonObject("definition")
+        .getJsonArray("resource");
+    assertEquals(1, res.size());
   }
 }
