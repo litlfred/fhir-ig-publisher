@@ -89,9 +89,32 @@ public final class IncrementalPlan {
   private final Map<String, Set<String>> fshOutputs = new HashMap<>();
   /** fsh file → fsh files that insert from it (from fsh-cone); optional. */
   private final Map<String, Set<String>> fshUsers;
+  /** Output files SUSHI generates at HEAD, from head's fsh-index; null when unknown. */
+  private final Set<String> headFshOutputs;
 
   public IncrementalPlan(Path astDir, Map<String, Set<String>> fshUsers) throws IOException {
+    this(astDir, fshUsers, null);
+  }
+
+  /**
+   * @param headFshIndex SUSHI's {@code fsh-index.json} at HEAD, or null. Without
+   *                     it, a deleted {@code .fsh} file forces a full build:
+   *                     whether its definitions moved to another file cannot
+   *                     be told.
+   */
+  public IncrementalPlan(Path astDir, Map<String, Set<String>> fshUsers, Path headFshIndex) throws IOException {
     this.fshUsers = fshUsers == null ? Map.of() : fshUsers;
+    if (headFshIndex != null && Files.exists(headFshIndex)) {
+      headFshOutputs = new TreeSet<>();
+      for (JsonElement je : (JsonArray) JsonParser.parse(Files.readString(headFshIndex))) {
+        String of = str(je.asJsonObject(), "outputFile");
+        if (of != null) {
+          headFshOutputs.add(norm(of));
+        }
+      }
+    } else {
+      headFshOutputs = null;
+    }
     JsonObject m = JsonParser.parseObject(Files.readString(astDir.resolve("manifest.json")));
     for (JsonElement je : m.getJsonArray("resources")) {
       JsonObject o = je.asJsonObject();
@@ -162,7 +185,11 @@ public final class IncrementalPlan {
     if (!hits.isEmpty()) {
       return new FileResult(c, Effect.RESOURCES, hits, null);
     }
-    boolean source = path.endsWith(".fsh") || path.endsWith(".cql") || path.startsWith("input/");
+    if (c.status() == 'A' && path.endsWith(".cql")) {
+      return new FileResult(c, Effect.FULL_BUILD, Set.of(),
+          "new CQL file: the Library it feeds is known only after it is built");
+    }
+    boolean source = path.endsWith(".fsh") || path.startsWith("input/");
     if (c.status() == 'A' && source) {
       return new FileResult(c, Effect.NEW_SOURCE, Set.of(),
           "new file: built fresh; its dependents are known only after it is built");
@@ -215,6 +242,35 @@ public final class IncrementalPlan {
     return hits;
   }
 
+  /**
+   * The resources {@code path} itself DEFINES, each with the SUSHI output file
+   * it is generated as ({@code null} for a resource whose source is the file
+   * itself). A {@code .cql} file or a RuleSet's users only AFFECT resources,
+   * which are defined elsewhere, so they are not here.
+   */
+  Map<String, String> definedBy(String path) {
+    Map<String, String> out = new java.util.TreeMap<>();
+    for (Entry e : entries) {
+      if (e.source() != null && (norm(e.source()).equals(path) || norm(e.source()).endsWith("/" + path))) {
+        out.put(e.key(), null);
+      }
+    }
+    if (path.endsWith(".fsh")) {
+      for (Map.Entry<String, Set<String>> f : fshOutputs.entrySet()) {
+        if (path.equals(f.getKey()) || path.endsWith("/" + f.getKey())) {
+          for (String outFile : f.getValue()) {
+            for (Entry e : entries) {
+              if (e.source() != null && norm(e.source()).endsWith(outFile)) {
+                out.put(e.key(), outFile);
+              }
+            }
+          }
+        }
+      }
+    }
+    return out;
+  }
+
   /** Everything that depends on {@code seeds}, transitively, seeds included. */
   Set<String> forwardCone(Set<String> seeds) {
     return closure(seeds, dependents);
@@ -255,20 +311,44 @@ public final class IncrementalPlan {
     Set<String> removed = new TreeSet<>();
     List<String> fullBecause = new ArrayList<>();
     for (FileResult r : results) {
-      seeds.addAll(r.resources());
+      Set<String> here = new TreeSet<>(r.resources());
       if (r.change().status() == 'D') {
-        removed.addAll(r.resources());
+        // Review of PR #8, M1: a key is removed only when head no longer
+        // defines it. A deleted .cql changes its Library rather than removing
+        // it, and a deleted .fsh file's definitions may have moved to another.
+        String path = norm(r.change().path());
+        for (Map.Entry<String, String> d : definedBy(path).entrySet()) {
+          String outFile = d.getValue();
+          if (outFile == null) {
+            removed.add(d.getKey());
+            here.remove(d.getKey());
+          } else if (headFshOutputs == null) {
+            fullBecause.add(r.change().path() + ": deleted FSH file; whether " + d.getKey()
+                + " moved to another file is known only from head's fsh-index");
+          } else if (!headFshOutputs.contains(outFile)) {
+            removed.add(d.getKey());
+            here.remove(d.getKey());
+          }
+        }
       }
+      seeds.addAll(here);
       if (r.effect() == Effect.FULL_BUILD) {
         fullBecause.add(r.change().path() + ": " + r.reason());
       }
     }
-    Set<String> rebuild = forwardCone(seeds);
+    Set<String> both = new TreeSet<>(removed);
+    both.retainAll(seeds);
+    if (!both.isEmpty()) {
+      fullBecause.add("removed by one change and rebuilt by another: " + both);
+      removed.removeAll(both);
+    }
+    Set<String> cone = forwardCone(union(seeds, removed));
+    Set<String> rebuild = new TreeSet<>(cone);
     rebuild.removeAll(removed);
     Set<String> load = toLoad(rebuild);
     load.removeAll(removed);
     int total = entries.size();
-    double fraction = total == 0 ? 0 : (double) forwardCone(seeds).size() / total;
+    double fraction = total == 0 ? 0 : (double) cone.size() / total;
     if (fraction > threshold) {
       fullBecause.add(String.format("cone is %.1f%% of the IG, above the %.0f%% threshold", 100 * fraction,
           100 * threshold));
@@ -340,6 +420,12 @@ public final class IncrementalPlan {
     plan.getJsonArray("fullBuildBecause").add(GUARD_REASON);
     plan.set("guard", GUARD_REASON + " (code review of fhir-ig-publisher PR #8); the plan above is for review only");
     return plan;
+  }
+
+  private static Set<String> union(Set<String> a, Set<String> b) {
+    Set<String> u = new TreeSet<>(a);
+    u.addAll(b);
+    return u;
   }
 
   private static JsonArray arr(Set<String> s) {

@@ -13,6 +13,9 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
  * <p>Writes the incremental plan for a delta against a base AST. {@code -base}
  * defaults to the AST's own {@code inputs.sourceRevision}. Builds nothing.
  *
+ * <p>{@code -head-fsh-index} is SUSHI's index after running at head. Without
+ * it, a deleted {@code .fsh} file is a full build.
+ *
  * <p>While {@link IncrementalPlan#INCREMENTAL_GUARD} is on, the written
  * {@code decision} is always {@code full}; the computed one is kept as
  * {@code computedDecision}.
@@ -23,7 +26,7 @@ public class AstPlanCli {
     String ast = AstExportCli.param(args, "-ast");
     String ig = AstExportCli.param(args, "-ig");
     if (ast == null || ig == null) {
-      System.err.println("usage: AstPlanCli -ast <dir> -ig <dir> [-base <rev>] [-head <rev> | -staged] [-threshold 0.4] [-out plan.json] [-fsh-users fsh-file-users.json]");
+      System.err.println("usage: AstPlanCli -ast <dir> -ig <dir> [-base <rev>] [-head <rev> | -staged] [-threshold 0.4] [-out plan.json] [-fsh-users fsh-file-users.json] [-head-fsh-index <fsh-generated/data/fsh-index.json at head>]");
       System.exit(2);
     }
     String base = AstExportCli.param(args, "-base");
@@ -47,8 +50,9 @@ public class AstPlanCli {
     JsonObject plan;
     try {
       List<AstDelta.Change> delta = AstDelta.fromGit(ig, base, head);
-      plan = new IncrementalPlan(Path.of(ast), fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)))
-          .plan(delta, threshold);
+      String hi = AstExportCli.param(args, "-head-fsh-index");
+      plan = new IncrementalPlan(Path.of(ast), fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)),
+          hi == null ? null : Path.of(hi)).plan(delta, threshold);
     } catch (FullBuildRequired e) {
       plan = IncrementalPlan.forcedFull(e.getMessage());
     }

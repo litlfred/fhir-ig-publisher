@@ -22,9 +22,10 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
  * and repeat until the cone stops growing.
  *
  * <ol>
- *   <li>Plan ({@link IncrementalPlan}). A {@code full} decision runs one
- *       ordinary build instead and says why.</li>
- *   <li>Run SUSHI on the real IG, so {@code fsh-generated/} matches head.</li>
+ *   <li>Run SUSHI on the real IG first, so {@code fsh-generated/} and its
+ *       index match head when the plan is made.</li>
+ *   <li>Plan ({@link IncrementalPlan}), with head's fsh-index. A {@code full}
+ *       decision runs one ordinary build instead and says why.</li>
  *   <li>Write {@code loadFromCache} as a package into the package cache
  *       ({@link CachePackageWriter}).</li>
  *   <li>Assemble a temporary IG of only the rebuild set
@@ -69,8 +70,12 @@ public class IncrementalBuildCli {
     JsonObject plan;
     try {
       List<AstDelta.Change> delta = AstDelta.fromGit(ig.toString(), baseRev, head);
-      plan = new IncrementalPlan(baseAst, fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)))
-          .plan(delta, threshold);
+      // SUSHI first, so fsh-generated/ (and its index) match head before planning.
+      if (Files.exists(ig.resolve("sushi-config.yaml")) && Toolchain.run(ig.toString(), "sushi", ".") == null) {
+        throw new FullBuildRequired("SUSHI failed in " + ig + "; the rebuild set's sources would be stale");
+      }
+      plan = new IncrementalPlan(baseAst, fu == null ? null : IncrementalPlan.readFshUsers(Path.of(fu)),
+          ig.resolve(FSH_INDEX)).plan(delta, threshold);
     } catch (FullBuildRequired e) {
       plan = IncrementalPlan.forcedFull(e.getMessage());
     }
@@ -95,9 +100,6 @@ public class IncrementalBuildCli {
     String headRev = staged ? "staged-on-" + Toolchain.sourceRevision(ig.toString())
         : Toolchain.run(ig.toString(), "git", "rev-parse", head);
 
-    if (Toolchain.run(ig.toString(), "sushi", ".") == null) {
-      throw new IllegalStateException("SUSHI failed in " + ig + "; the rebuild set's sources would be stale");
-    }
     String igRel = TempIgAssembler.igResourcePath(ig.resolve("ig.ini"));
     JsonObject igRes = JsonParser.parseObject(Files.readString(ig.resolve(igRel)));
     String packageId = igRes.asString("packageId");

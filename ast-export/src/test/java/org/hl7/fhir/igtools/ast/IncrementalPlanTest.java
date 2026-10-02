@@ -4,6 +4,7 @@ import static org.hl7.fhir.igtools.ast.LogicEdgesTest.el;
 import static org.hl7.fhir.igtools.ast.LogicEdgesTest.res;
 import static org.hl7.fhir.igtools.ast.LogicEdgesTest.val;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -135,19 +136,58 @@ class IncrementalPlanTest {
     assertEquals(List.of(PD), list(p, "seeds"));
   }
 
+  /** Head's fsh-index, as SUSHI writes it, with these output files. */
+  Path headIndex(String... outputs) throws Exception {
+    StringBuilder b = new StringBuilder("[");
+    for (int i = 0; i < outputs.length; i += 2) {
+      b.append(i == 0 ? "" : ",").append("{\"outputFile\": \"").append(outputs[i]).append("\", \"fshFile\": \"")
+          .append(outputs[i + 1]).append("\"}");
+    }
+    Path f = ast.resolve("head-fsh-index-" + System.nanoTime() + ".json");
+    Files.writeString(f, b.append("]").toString());
+    return f;
+  }
+
+  JsonObject planAtHead(String nameStatus, Path headIndex) throws Exception {
+    return new IncrementalPlan(ast, Map.of(), headIndex).plan(AstDelta.parseNameStatus(nameStatus), 0.9);
+  }
+
   @Test
   void deletingAFileRemovesItsResourceAndRebuildsItsDependents() throws Exception {
-    JsonObject p = plan("D\tinput/fsh/logic/A.fsh", null, 0.4);
+    JsonObject p = planAtHead("D\tinput/fsh/logic/A.fsh",
+        headIndex("Library-B.json", "logic/B.fsh", "PlanDefinition-PD.json", "logic/PD.fsh"));
     assertEquals(List.of(A), list(p, "remove"));
     assertEquals(Set.of(PD, M), Set.copyOf(list(p, "rebuild")));
   }
 
   @Test
+  void deletingAnFshFileWithoutHeadsIndexIsAFullBuild() throws Exception {
+    JsonObject p = plan("D\tinput/fsh/logic/A.fsh", Map.of(), 0.9);
+    assertEquals("full", p.asString("decision"));
+    assertTrue(list(p, "remove").isEmpty());
+  }
+
+  @Test
   void aRenameIsADeleteAndANewSource() throws Exception {
-    JsonObject p = plan("R100\tinput/fsh/logic/M.fsh\tinput/fsh/logic/Measure.fsh", null, 0.4);
-    assertEquals(List.of(M), list(p, "remove"));
-    JsonArray files = p.getJsonArray("files");
-    assertEquals("NEW_SOURCE", files.get(1).asJsonObject().asString("effect"));
+    // Without head's index, whether M's definition survived cannot be told.
+    JsonObject blind = plan("R100\tinput/fsh/logic/M.fsh\tinput/fsh/logic/Measure.fsh", Map.of(), 0.9);
+    assertEquals("full", blind.asString("decision"));
+    // With it: M is still generated, now from Measure.fsh, so it is rebuilt and never removed.
+    JsonObject p = planAtHead("R100\tinput/fsh/logic/M.fsh\tinput/fsh/logic/Measure.fsh",
+        headIndex("Measure-M.json", "logic/Measure.fsh"));
+    assertTrue(list(p, "remove").isEmpty(), "M is still defined at head");
+    assertTrue(list(p, "rebuild").contains(M), "M is rebuilt from its new file");
+    assertEquals("NEW_SOURCE", p.getJsonArray("files").get(1).asJsonObject().asString("effect"));
+    assertEquals("incremental", p.asString("decision"));
+  }
+
+  @Test
+  void fshContentMovingBetweenFilesKeepsTheResource() throws Exception {
+    // A's definition moves from logic/A.fsh into logic/B.fsh.
+    JsonObject p = planAtHead("D\tinput/fsh/logic/A.fsh\nM\tinput/fsh/logic/B.fsh",
+        headIndex("Library-A.json", "logic/B.fsh", "Library-B.json", "logic/B.fsh"));
+    assertTrue(list(p, "remove").isEmpty());
+    assertTrue(list(p, "rebuild").containsAll(List.of(A, B)));
   }
 
   @Test
@@ -189,5 +229,21 @@ class IncrementalPlanTest {
     // Lifted only by the owner, after review: see IncrementalPlan.INCREMENTAL_GUARD.
     assertTrue(IncrementalPlan.INCREMENTAL_GUARD);
     assertEquals("full", IncrementalPlan.guard(plan("M\tinput/fsh/logic/PD.fsh", null, 0.4)).asString("decision"));
+  }
+
+  // M1: a key is removed only when head no longer defines it.
+
+  @Test
+  void aCqlRenameNeverLosesItsLibrary() throws Exception {
+    JsonObject p = plan("R100\tinput/cql/A.cql\tinput/cql/A2.cql", Map.of(), 0.9);
+    assertFalse(list(p, "remove").contains(A), "Library A is still defined by its own source");
+    assertTrue(list(p, "rebuild").contains(A) || "full".equals(p.asString("decision")));
+  }
+
+  @Test
+  void aCqlDeleteRebuildsItsLibraryRatherThanRemovingIt() throws Exception {
+    JsonObject p = plan("D\tinput/cql/A.cql", Map.of(), 0.9);
+    assertTrue(list(p, "remove").isEmpty());
+    assertTrue(list(p, "rebuild").contains(A));
   }
 }
