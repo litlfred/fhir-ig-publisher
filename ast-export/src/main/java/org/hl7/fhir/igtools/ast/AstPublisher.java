@@ -29,8 +29,28 @@ import org.hl7.fhir.utilities.json.model.JsonObject;
  */
 public class AstPublisher extends Publisher {
 
+  /**
+   * The inputs as they stood BEFORE the build, or null when the caller did
+   * not record them. Must be taken before {@link #execute()}: SUSHI and the
+   * Publisher write files under {@code input/} that git does not ignore, and
+   * a digest taken after the build hashes them, so no clean clone of the
+   * same commit can ever reproduce it (bean mac1, 2026-10-02: smart-trust
+   * recorded {@code 7c2f6d91…} where a fresh clone computes
+   * {@code c1023d82…}).
+   */
+  private JsonObject inputsBeforeBuild;
+
   public AstPublisher() {
     super();
+  }
+
+  /** Records the inputs this build is valid for. Call before {@link #execute()}. */
+  public void recordInputs(String root) throws IOException {
+    inputsBeforeBuild = inputs(root, null);
+  }
+
+  JsonObject recordedInputs() {
+    return inputsBeforeBuild;
   }
 
   /** Writes the AST for the run that just completed. */
@@ -38,7 +58,7 @@ public class AstPublisher extends Publisher {
     AstFieldsAccess fields = new AstFieldsAccess(this);
     String root = fields.rootDir();
     AstExporter exporter = new AstExporter(r -> composeJson(fields, r));
-    exporter.export(getFileList(), outDir, header(fields, root), upstreamEdges(fields));
+    exporter.export(getFileList(), outDir, header(fields, root, inputsBeforeBuild), upstreamEdges(fields));
     // SUSHI's own map from .fsh file to output resource, kept with the AST so
     // a later delta can be mapped even for a file that has since been deleted.
     Path fshIndex = Path.of(root, "fsh-generated", "data", "fsh-index.json");
@@ -81,7 +101,7 @@ public class AstPublisher extends Publisher {
         AstExporter.childValue(e, "version"));
   }
 
-  static JsonObject header(AstFieldsAccess fields, String root) throws IOException {
+  static JsonObject header(AstFieldsAccess fields, String root, JsonObject recorded) throws IOException {
     JsonObject h = new JsonObject();
     h.add("generatedAt", Instant.now().toString());
     JsonObject ig = new JsonObject();
@@ -92,7 +112,9 @@ public class AstPublisher extends Publisher {
     h.add("ig", ig);
     JsonObject toolchain = Toolchain.describe(root);
     h.add("toolchain", toolchain);
-    JsonObject inputs = inputs(root, toolchain);
+    // Recorded before the build when the caller did so; computing it here,
+    // after the build, is the fallback that cannot verify on a clean clone.
+    JsonObject inputs = recorded != null ? recorded : inputs(root, toolchain);
     h.add("inputs", inputs);
     if (!inputs.has("sourceRevision")) {
       h.add("inputsUnknown", new JsonObject().add("sourceRevision", "the IG root is not a git checkout"));
