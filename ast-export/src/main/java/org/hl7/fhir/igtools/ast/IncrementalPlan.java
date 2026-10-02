@@ -401,6 +401,13 @@ public final class IncrementalPlan {
     return p;
   }
 
+  /** Decides {@code plan} full for {@code reason}, keeping the rest of it for review. */
+  public static JsonObject forceFull(JsonObject plan, String reason) {
+    plan.set("decision", "full");
+    plan.getJsonArray("fullBuildBecause").add(reason);
+    return plan;
+  }
+
   /**
    * The ONE place the {@link #INCREMENTAL_GUARD} is applied: both
    * {@code AstPlanCli} and {@code IncrementalBuildCli} pass every plan through

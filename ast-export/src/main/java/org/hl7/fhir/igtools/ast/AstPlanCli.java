@@ -56,6 +56,10 @@ public class AstPlanCli {
     } catch (FullBuildRequired e) {
       plan = IncrementalPlan.forcedFull(e.getMessage());
     }
+    String untrusted = BaseAstCheck.mismatch(Path.of(ig), JsonParser.parseObject(Files.readString(Path.of(ast, "manifest.json"))));
+    if (untrusted != null) {
+      IncrementalPlan.forceFull(plan, untrusted);
+    }
     IncrementalPlan.guard(plan);
     plan.add("base", base);
     plan.add("head", head == null ? "(staged)" : head);

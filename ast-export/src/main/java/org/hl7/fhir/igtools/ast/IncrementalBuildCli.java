@@ -85,6 +85,10 @@ public class IncrementalBuildCli {
     } catch (FullBuildRequired e) {
       plan = IncrementalPlan.forcedFull(e.getMessage());
     }
+    String untrusted = BaseAstCheck.mismatch(ig, baseManifest);
+    if (untrusted != null) {
+      IncrementalPlan.forceFull(plan, untrusted);
+    }
     IncrementalPlan.guard(plan);
     Files.createDirectories(work);
     Files.writeString(work.resolve("plan.json"), JsonParser.compose(plan, true));
