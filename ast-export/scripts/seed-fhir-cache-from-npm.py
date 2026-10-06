@@ -224,7 +224,11 @@ def ihe_paths():
             _IHE[f"ihe.{dom.lower()}.{prof.lower()}"] = f"{dom}/{prof}"
             r3 = subprocess.run(["git", "-C", tmp, "ls-tree", "-d", "--name-only", f"HEAD:{dom}/{prof}"],
                                 capture_output=True, text=True)
-            _IHE_VERSIONS[f"ihe.{dom.lower()}.{prof.lower()}"] = r3.stdout.split()
+            versions = r3.stdout.split()
+            _IHE_VERSIONS[f"ihe.{dom.lower()}.{prof.lower()}"] = versions
+            if prof.lower().startswith("ihe."):
+                _IHE[prof.lower()] = f"{dom}/{prof}"
+                _IHE_VERSIONS[prof.lower()] = versions
     return _IHE
 
 
