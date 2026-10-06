@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AST export for the FHIR IG Publisher, as a library built ON TOP of it.
+
+  Deliberately NOT a module of the root pom: nothing in the existing build
+  changes, and this depends on the RELEASED publisher.core from Maven Central
+  rather than on the checkout beside it. Bump publisher.version to follow
+  upstream.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.hl7.fhir.publisher.ext</groupId>
+    <artifactId>ig-ast-export</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+    <name>IG Publisher AST export</name>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+        <publisher.version>2.3.4</publisher.version>
+        <junit.version>5.10.2</junit.version>
+        <!-- The Publisher's own pins (org.hl7.fhir.publisher 2.3.4 parent pom). -->
+        <apache_poi_version>5.4.1</apache_poi_version>
+        <commonmark.version>0.21.0</commonmark.version>
+        <txtmark.version>0.13</txtmark.version>
+        <!-- Floors for transitive dependencies that the Publisher brings in at
+             versions Trivy flags (PR #8, 2026-10-02): jackson 2.22.2 has
+             CVE-2026-89407, -89425, -91776 and -91777 (high), and log4j-api
+             2.24.3 has CVE-2026-49844 (medium). Raise them, or drop these,
+             once publisher.version carries the fixed ones itself. -->
+        <jackson.version>2.22.3</jackson.version>
+        <log4j.version>2.25.5</log4j.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-bom</artifactId>
+                <version>${log4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.hl7.fhir.publisher</groupId>
+            <artifactId>org.hl7.fhir.publisher.core</artifactId>
+            <version>${publisher.version}</version>
+        </dependency>
+        <!--
+          The Publisher declares these OPTIONAL, and Maven does not pass an
+          optional dependency on to a module that depends on it. Running
+          AstExportCli without them failed at run time (Apache POI missing);
+          the workaround was adding the jars to the classpath by hand
+          (folio-assistant bean wnhh). Declared here, at the Publisher's own
+          versions, so the module's classpath is complete.
+        -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi</artifactId>
+            <version>${apache_poi_version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${apache_poi_version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.poi</groupId>
+                    <artifactId>poi-ooxml-lite</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml-full</artifactId>
+            <version>${apache_poi_version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-gfm-tables</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.rjeschke</groupId>
+            <artifactId>txtmark</artifactId>
+            <version>${txtmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>
