@@ -423,7 +423,7 @@ def check_cached(dest, name, version):
             pj = json.load(fh)
     except (OSError, ValueError) as e:
         return f"{pjf}: {e}"
-    if pj.get("name") != name or (version != "current" and pj.get("version") != version):
+    if pj.get("name") not in (name, f"@hl7/{name}") or (version != "current" and pj.get("version") != version):
         return f"cache entry {dest} says {pj.get('name')}#{pj.get('version')}"
     return None
 
