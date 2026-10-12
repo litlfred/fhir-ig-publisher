@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import org.hl7.fhir.r5.elementmodel.Element;
+import org.hl7.fhir.services.elementmodel.Element;
 
 /**
  * Dependency edges among the LOGIC layer — Library, PlanDefinition, Measure,
@@ -43,7 +43,7 @@ public final class LogicEdges {
     // analyser records no such edge.
     Element meta = child(root, "meta");
     if (meta != null && meta.hasChildren()) {
-      for (Element c : meta.getChildren()) {
+      for (Element c : meta.getChildList()) {
         if ("profile".equals(c.getName())) {
           add(out, "meta.profile", c.getValue(), resourceType + ".meta.profile");
         }
@@ -59,7 +59,7 @@ public final class LogicEdges {
     if (!e.hasChildren()) {
       return null;
     }
-    for (Element c : e.getChildren()) {
+    for (Element c : e.getChildList()) {
       if (name.equals(c.getName())) {
         return c;
       }
@@ -71,7 +71,7 @@ public final class LogicEdges {
     if (!e.hasChildren()) {
       return;
     }
-    for (Element c : e.getChildren()) {
+    for (Element c : e.getChildList()) {
       String name = c.getName();
       String p = path + "." + name;
       switch (name) {

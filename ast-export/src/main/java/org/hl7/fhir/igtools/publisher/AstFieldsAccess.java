@@ -1,6 +1,6 @@
 package org.hl7.fhir.igtools.publisher;
 
-import org.hl7.fhir.r5.context.IWorkerContext;
+import org.hl7.fhir.services.context.IWorkerContext;
 
 /**
  * Read-only view of the few {@link PublisherFields} the AST export needs.

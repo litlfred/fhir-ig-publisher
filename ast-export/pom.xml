@@ -21,7 +21,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>17</maven.compiler.release>
-        <publisher.version>2.3.4</publisher.version>
+        <publisher.version>3.0.0</publisher.version>
         <junit.version>5.10.2</junit.version>
         <!-- The Publisher's own pins (org.hl7.fhir.publisher 2.3.4 parent pom). -->
         <apache_poi_version>5.4.1</apache_poi_version>

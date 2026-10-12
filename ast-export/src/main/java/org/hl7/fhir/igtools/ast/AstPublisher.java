@@ -13,9 +13,9 @@ import org.hl7.fhir.igtools.publisher.DependencyAnalyser;
 import org.hl7.fhir.igtools.publisher.FetchedFile;
 import org.hl7.fhir.igtools.publisher.FetchedResource;
 import org.hl7.fhir.igtools.publisher.Publisher;
-import org.hl7.fhir.r5.formats.IParser.OutputStyle;
-import org.hl7.fhir.r5.model.CanonicalResource;
-import org.hl7.fhir.r5.model.Resource;
+import org.hl7.fhir.model.utilities.formats.OutputStyle;
+import org.hl7.fhir.model.core.CanonicalResource;
+import org.hl7.fhir.model.core.Resource;
 import org.hl7.fhir.utilities.json.model.JsonObject;
 
 /**
@@ -100,7 +100,7 @@ public class AstPublisher extends Publisher {
   }
 
   static String keyFor(FetchedResource r) {
-    org.hl7.fhir.r5.elementmodel.Element e = r.getElement();
+    org.hl7.fhir.services.elementmodel.Element e = r.getElement();
     return AstExporter.keyOf(r.fhirType(), r.getId(), AstExporter.childValue(e, "url"),
         AstExporter.childValue(e, "version"));
   }
@@ -170,7 +170,7 @@ public class AstPublisher extends Publisher {
 
   static byte[] composeJson(AstFieldsAccess fields, FetchedResource r) throws IOException {
     java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-    new org.hl7.fhir.r5.elementmodel.JsonParser(fields.context()).compose(r.getElement(), out, OutputStyle.PRETTY, null);
+    new org.hl7.fhir.services.elementmodel.JsonParser(fields.context()).compose(r.getElement(), out, OutputStyle.PRETTY, null);
     return out.toByteArray();
   }
 }

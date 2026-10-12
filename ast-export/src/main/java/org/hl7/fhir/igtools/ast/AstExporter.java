@@ -11,7 +11,7 @@ import java.util.Map;
 
 import org.hl7.fhir.igtools.publisher.FetchedFile;
 import org.hl7.fhir.igtools.publisher.FetchedResource;
-import org.hl7.fhir.r5.elementmodel.Element;
+import org.hl7.fhir.services.elementmodel.Element;
 import org.hl7.fhir.utilities.json.model.JsonArray;
 import org.hl7.fhir.utilities.json.model.JsonObject;
 import org.hl7.fhir.utilities.json.parser.JsonParser;
@@ -234,7 +234,7 @@ public class AstExporter {
     if (e == null || !e.hasChildren()) {
       return null;
     }
-    for (Element c : e.getChildren()) {
+    for (Element c : e.getChildList()) {
       if (name.equals(c.getName()) && c.hasValue()) {
         return c.getValue();
       }

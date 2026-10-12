@@ -13,7 +13,7 @@ import java.util.List;
 
 import org.hl7.fhir.igtools.publisher.FetchedFile;
 import org.hl7.fhir.igtools.publisher.FetchedResource;
-import org.hl7.fhir.r5.elementmodel.Element;
+import org.hl7.fhir.services.elementmodel.Element;
 import org.hl7.fhir.utilities.json.model.JsonObject;
 import org.hl7.fhir.utilities.json.parser.JsonParser;
 import org.junit.jupiter.api.Test;
@@ -24,10 +24,10 @@ class AstExporterTest {
   static FetchedResource resource(String type, String id, String url, String version) {
     Element e = new Element(type);
     if (url != null) {
-      e.getChildren().add(new Element("url", null, "uri", url));
+      e.getChildList().add(new Element("url", null, "uri", url));
     }
     if (version != null) {
-      e.getChildren().add(new Element("version", null, "string", version));
+      e.getChildList().add(new Element("version", null, "string", version));
     }
     FetchedResource r = new FetchedResource(id);
     // A bare Element has no Property, so its fhirType() cannot be asked;
@@ -104,7 +104,7 @@ class AstExporterTest {
     List<FetchedFile> files = List.of(file("a.json",
         resource("Library", "Lib", "http://x/Library/Lib", "1.0.0"),
         resource("Library", "Lib", "http://x/Library/Lib", "2.0.0")));
-    List<AstExporter.Entry> entries = new AstExporter(r -> r.getElement().getChildren().get(1).getValue()
+    List<AstExporter.Entry> entries = new AstExporter(r -> r.getElement().getChildList().get(1).getValue()
         .getBytes(StandardCharsets.UTF_8)).export(files, out, new JsonObject());
     assertNotEquals(entries.get(0).file(), entries.get(1).file());
     assertEquals("1.0.0", Files.readString(out.resolve(entries.get(0).file())));
