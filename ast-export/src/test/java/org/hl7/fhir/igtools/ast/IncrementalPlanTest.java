@@ -17,7 +17,7 @@ import java.util.Set;
 
 import org.hl7.fhir.igtools.publisher.FetchedFile;
 import org.hl7.fhir.igtools.publisher.FetchedResource;
-import org.hl7.fhir.r5.elementmodel.Element;
+import org.hl7.fhir.services.elementmodel.Element;
 import org.hl7.fhir.utilities.json.model.JsonArray;
 import org.hl7.fhir.utilities.json.model.JsonObject;
 import org.junit.jupiter.api.BeforeEach;

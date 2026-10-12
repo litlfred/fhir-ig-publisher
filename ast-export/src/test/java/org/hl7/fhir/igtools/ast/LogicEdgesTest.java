@@ -10,7 +10,7 @@ import java.util.List;
 
 import org.hl7.fhir.igtools.publisher.FetchedFile;
 import org.hl7.fhir.igtools.publisher.FetchedResource;
-import org.hl7.fhir.r5.elementmodel.Element;
+import org.hl7.fhir.services.elementmodel.Element;
 import org.hl7.fhir.utilities.json.model.JsonArray;
 import org.hl7.fhir.utilities.json.model.JsonObject;
 import org.hl7.fhir.utilities.json.parser.JsonParser;
@@ -22,7 +22,7 @@ class LogicEdgesTest {
   static Element el(String name, Element... children) {
     Element e = new Element(name);
     for (Element c : children) {
-      e.getChildren().add(c);
+      e.getChildList().add(c);
     }
     return e;
   }
