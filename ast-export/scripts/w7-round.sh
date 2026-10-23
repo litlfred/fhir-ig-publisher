@@ -5,11 +5,15 @@
 # base AST. Every step prints what it did; nothing here is assumed to work.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="$(cd "${1:?usage: w7-round.sh <work-dir used by run-real-igs.sh>}" && pwd)"
+WORK="$(cd "${1:?usage: w7-round.sh <work-dir used by run-real-igs.sh> [cql|fml]}" && pwd)"
+# Which source to probe: a CQL file (default), or a FHIR Mapping Language file
+# under input/maps/, whose StructureMap is not SUSHI output (bean qzex).
+PROBE="${2:-cql}"
+case "$PROBE" in cql|fml) ;; *) echo "probe must be cql or fml"; exit 2;; esac
 IG="$WORK/smart-immunizations"
 BASE="$IG/output-ast"
 CP="$HERE/target/classes:$(cat "$WORK/cp.txt")"
-OUT="$WORK/w7"
+OUT="$WORK/w7"; [ "$PROBE" = fml ] && OUT="$WORK/w7-fml"
 mkdir -p "$OUT"
 
 [ -f "$BASE/manifest.json" ] || { echo "no base AST at $BASE"; exit 1; }
@@ -19,10 +23,10 @@ grep -qxF 'output-ast/' "$IG/.git/info/exclude" 2>/dev/null || echo 'output-ast/
 git -C "$IG" config user.email ci@example.invalid
 git -C "$IG" config user.name ci
 # The base AST records the IG's commit; make the delta a real commit on top.
-cql=$(ls "$IG"/input/cql/*.cql | head -1)
-echo "changing: ${cql#$IG/}"
-printf '\n// ast-export W7 probe\n' >> "$cql"
-git -C "$IG" commit -qam "W7 probe: one CQL file"
+if [ "$PROBE" = fml ]; then src=$(ls "$IG"/input/maps/*.fml | head -1); else src=$(ls "$IG"/input/cql/*.cql | head -1); fi
+echo "changing: ${src#$IG/}"
+printf '\n// ast-export W7 probe\n' >> "$src"
+git -C "$IG" commit -qam "W7 probe: one $PROBE file"
 
 echo "== plan"
 java -cp "$CP" org.hl7.fhir.igtools.ast.AstPlanCli -ast "$BASE" -ig "$IG" -out "$OUT/plan.json"
