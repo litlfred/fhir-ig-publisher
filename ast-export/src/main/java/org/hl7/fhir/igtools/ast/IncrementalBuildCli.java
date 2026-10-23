@@ -99,13 +99,13 @@ public class IncrementalBuildCli {
     System.out.println("Plan: " + work.resolve("plan.json"));
 
     if ("full".equals(plan.asString("decision"))) {
-      fullBuild(ig, out, JsonParser.compose(plan.getJsonArray("fullBuildBecause")));
+      fullBuild(ig, out, JsonParser.compose(plan.getJsonArray("fullBuildBecause")), tx);
       return;
     }
     try {
       incremental(args, plan, baseAst, ig, out, work, cacheFolder, maxRounds, tx, baseRev, staged, head);
     } catch (FullBuildRequired e) {
-      fullBuild(ig, out, e.getMessage());
+      fullBuild(ig, out, e.getMessage(), tx);
     }
   }
 
@@ -158,9 +158,10 @@ public class IncrementalBuildCli {
       p.getSettings().setNoSushi(true);
       p.getSettings().setCacheOption(PublisherUtils.CacheOption.LEAVE);
       p.getSettings().setPackageCacheFolder(cache.toString());
-      if (tx != null) {
-        p.getSettings().setTxServer(tx);
-      }
+      // The Publisher's own rule, as AstExportCli: -tx, else -devtx, else
+      // tx.fhir.org. Setting it only for -tx left the round with no
+      // terminology server while the full build used tx.fhir.org.
+      Publisher.setTxServerValue(args, p);
       p.execute();
       Path partial = roundDir.resolve("output-ast");
       p.exportAst(partial);
@@ -225,9 +226,15 @@ public class IncrementalBuildCli {
     return want.equals(at) ? null : "HEAD is " + at + ", not -head " + head + " (" + want + ")";
   }
 
-  static void fullBuild(Path ig, Path out, String because) throws Exception {
+  /** The full build, with the run's {@code -tx} passed on so both branches use the same server. */
+  static void fullBuild(Path ig, Path out, String because, String tx) throws Exception {
     System.out.println("Full build: " + because);
-    AstExportCli.main(new String[] {"-ig", ig.toString(), "-ast-out", out.toString()});
+    AstExportCli.main(fullBuildArgs(ig, out, tx));
+  }
+
+  static String[] fullBuildArgs(Path ig, Path out, String tx) {
+    return tx == null ? new String[] {"-ig", ig.toString(), "-ast-out", out.toString()}
+        : new String[] {"-ig", ig.toString(), "-ast-out", out.toString(), "-tx", tx};
   }
 
   /** {@code inputs.sourceRevision}, or null when the manifest records none. */

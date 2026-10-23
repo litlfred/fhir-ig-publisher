@@ -328,4 +328,14 @@ class IncrementalRebuildTest {
     CachePackageWriter.write(base, Set.of(A), cache, "x.ig.ast-cache", "0.0.0-ast.abc.r1", "4.0.1");
     assertFalse(Files.exists(user.resolve("x.ig.ast-cache#0.0.0-ast.abc.r1")), "the user's cache is untouched");
   }
+
+  /** The full-build branch passes the run's -tx on (bean fpmn review, 2026-10-23). */
+  @Test
+  void theFullBuildBranchKeepsTheTerminologyServer() {
+    Path ig = Path.of("/ig"), out = Path.of("/out");
+    assertEquals(java.util.List.of("-ig", "/ig", "-ast-out", "/out", "-tx", "n/a"),
+        java.util.List.of(IncrementalBuildCli.fullBuildArgs(ig, out, "n/a")));
+    assertEquals(java.util.List.of("-ig", "/ig", "-ast-out", "/out"),
+        java.util.List.of(IncrementalBuildCli.fullBuildArgs(ig, out, null)));
+  }
 }
