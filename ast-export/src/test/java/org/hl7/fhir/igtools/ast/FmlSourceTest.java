@@ -70,6 +70,10 @@ class FmlSourceTest {
     assertTrue(a.copied().contains("input/maps/SM.fml"));
     assertTrue(Files.exists(tmp.resolve("work/input/maps/SM.fml")));
     assertTrue(Files.readString(a.igResource()).contains("\"input/maps\""), "path-resource kept");
+    // wv7r: a path-* directory exists in the temporary IG even with nothing copied into it.
+    assertEquals(List.of("input/maps"), TempIgAssembler.pathParameterDirs(
+        org.hl7.fhir.utilities.json.parser.JsonParser.parseObject(Files.readString(a.igResource()))));
+    assertTrue(Files.isDirectory(tmp.resolve("work/input/maps")));
   }
 
   /** wv7r: Jekyll failed on the temporary IG because the template includes menu.xml, which SUSHI writes. */
@@ -83,10 +87,13 @@ class FmlSourceTest {
     Files.writeString(ig.resolve("input/includes/sub/note.md"), "x");
     Files.writeString(ig.resolve("ig.ini"), "[IG]\nig = fsh-generated/resources/ImplementationGuide-x.json\n");
     Files.writeString(ig.resolve("fsh-generated/resources/ImplementationGuide-x.json"),
-        "{\"resourceType\": \"ImplementationGuide\", \"id\": \"x\", \"definition\": {\"resource\": []}}");
+        "{\"resourceType\": \"ImplementationGuide\", \"id\": \"x\", \"definition\": {\"resource\": [], "
+        + "\"parameter\": [{\"code\": {\"code\": \"path-binary\"}, \"value\": \"input/cql\"}]}}");
+    Files.createDirectories(ig.resolve("input/cql"));
     Path work = tmp.resolve("work");
     TempIgAssembler.assemble(ig, work, Set.of(), Map.of(), Set.of(), "ast.cache#0.0.0");
     assertEquals("<ul/>", Files.readString(work.resolve("fsh-generated/includes/menu.xml")));
     assertEquals("x", Files.readString(work.resolve("input/includes/sub/note.md")));
+    assertTrue(Files.isDirectory(work.resolve("input/cql")), "the empty path-binary directory exists");
   }
 }

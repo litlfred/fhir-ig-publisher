@@ -111,10 +111,39 @@ public final class TempIgAssembler {
       }
     }
 
+    // Every directory the IG's path-* parameters name exists in the temporary
+    // IG too, even when nothing was copied into it: the Publisher reports a
+    // missing one as an error (wv7r, fml probe: "path '.../input/cql' is not
+    // a valid directory").
+    for (String dir : pathParameterDirs(ig)) {
+      if (Files.isDirectory(igRoot.resolve(dir)) && !Path.of(dir).isAbsolute() && !dir.contains("..")) {
+        Files.createDirectories(work.resolve(dir));
+      }
+    }
+
     Path index = work.resolve("input/pagecontent/index.md");
     Files.createDirectories(index.getParent());
     Files.writeString(index, "Incremental AST rebuild. Not a published page.\n");
     return new Result(work, igOut, copied, missing);
+  }
+
+  /** The values of the ImplementationGuide's {@code path-*} parameters. */
+  static List<String> pathParameterDirs(JsonObject ig) {
+    List<String> dirs = new ArrayList<>();
+    JsonObject def = ig.getJsonObject("definition");
+    if (def == null || !def.has("parameter")) {
+      return dirs;
+    }
+    for (JsonElement je : def.getJsonArray("parameter")) {
+      JsonObject p = je.asJsonObject();
+      JsonElement code = p.get("code");
+      String c = code == null ? null
+          : code.isJsonObject() ? code.asJsonObject().asString("code") : code.asString();
+      if (c != null && c.startsWith("path-") && p.has("value")) {
+        dirs.add(p.asString("value"));
+      }
+    }
+    return dirs;
   }
 
   /** The {@code ig =} path from ig.ini. */
