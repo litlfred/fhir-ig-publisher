@@ -184,6 +184,12 @@ class AstExporterTest {
     assertEquals(ig.toAbsolutePath().normalize(), AstExportCli.igRoot(ig.resolve("ig.ini").toString()));
   }
 
+  @Test
+  void theDefaultAstOutResolvesARelativeIg() {
+    Path cwd = Path.of("").toAbsolutePath().normalize();
+    assertEquals(cwd.resolve("output-ast"), AstExportCli.defaultAstOut("."));
+  }
+
   private static int git(Path dir, String... args) throws Exception {
     List<String> cmd = new java.util.ArrayList<>(List.of("git"));
     cmd.addAll(List.of(args));

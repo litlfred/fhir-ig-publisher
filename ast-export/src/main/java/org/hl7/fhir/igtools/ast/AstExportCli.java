@@ -4,7 +4,6 @@ import java.nio.file.Path;
 
 import org.hl7.fhir.igtools.publisher.Publisher;
 import org.hl7.fhir.igtools.publisher.PublisherUtils;
-import org.hl7.fhir.utilities.Utilities;
 
 /**
  * {@code java -cp ... org.hl7.fhir.igtools.ast.AstExportCli -ig <dir> [-ast-out <dir>] [-tx <url>] [-no-sushi]}
@@ -39,9 +38,18 @@ public class AstExportCli {
     p.recordInputs(igRoot(ig).toString());
     p.execute();
     String out = param(args, "-ast-out");
-    Path outDir = out != null ? Path.of(out) : Path.of(Utilities.path(ig, "output-ast"));
+    Path outDir = out != null ? Path.of(out) : defaultAstOut(ig);
     p.exportAst(outDir);
     System.out.println("AST written to " + outDir.toAbsolutePath());
+  }
+
+  /**
+   * {@code <ig root>/output-ast}. Resolved from the absolute IG root, because
+   * {@code Utilities.path(".", "output-ast")} refuses a relative first element,
+   * and run-real-igs.sh passes {@code -ig .}.
+   */
+  static Path defaultAstOut(String ig) {
+    return igRoot(ig).resolve("output-ast");
   }
 
   /** The IG's root directory: {@code -ig} names it, or names a file inside it (ig.ini). */
