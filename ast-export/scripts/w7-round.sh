@@ -22,6 +22,14 @@ mkdir -p "$OUT"
 grep -qxF 'output-ast/' "$IG/.git/info/exclude" 2>/dev/null || echo 'output-ast/' >> "$IG/.git/info/exclude"
 git -C "$IG" config user.email ci@example.invalid
 git -C "$IG" config user.name ci
+# Start every probe from the base AST's own revision, with a clean tree. A
+# Publisher build leaves untracked files under input/ (generated page
+# content), and IncrementalBuildCli refuses a dirty tree. This IG clone is the
+# script's scratch copy, so resetting it loses nothing; output-ast/ is kept
+# because it is excluded above.
+REV=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["inputs"]["sourceRevision"])' "$BASE/manifest.json")
+git -C "$IG" reset -q --hard "$REV"
+git -C "$IG" clean -fdq
 # The base AST records the IG's commit; make the delta a real commit on top.
 if [ "$PROBE" = fml ]; then src=$(ls "$IG"/input/maps/*.fml | head -1); else src=$(ls "$IG"/input/cql/*.cql | head -1); fi
 echo "changing: ${src#$IG/}"
