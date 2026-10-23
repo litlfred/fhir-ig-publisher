@@ -32,6 +32,9 @@ public final class TempIgAssembler {
   private TempIgAssembler() {
   }
 
+  /** Directories of files the template's layouts include, copied into the temporary IG whole. */
+  static final List<String> INCLUDE_DIRS = List.of("input/includes", "fsh-generated/includes");
+
   /** What was assembled, for the caller and for tests. */
   public record Result(Path igRoot, Path igResource, List<String> copied, List<String> missing) {
   }
@@ -91,6 +94,22 @@ public final class TempIgAssembler {
     Path igOut = work.resolve(igRel);
     Files.createDirectories(igOut.getParent());
     Files.writeString(igOut, JsonParser.compose(ig, true));
+
+    // The template's layouts include files the IG supplies, such as the
+    // menu.xml SUSHI writes from sushi-config.yaml. The temporary IG is built
+    // with -no-sushi and no pages, so without them Jekyll fails on the first
+    // page (bean wv7r, 2026-10-23: "Could not locate the included file
+    // 'menu.xml'"). Copied whole: they are small and feed rendering only.
+    for (String dir : INCLUDE_DIRS) {
+      Path d = igRoot.resolve(dir);
+      if (Files.isDirectory(d)) {
+        try (java.util.stream.Stream<Path> s = Files.walk(d)) {
+          for (Path f : (Iterable<Path>) s.filter(Files::isRegularFile)::iterator) {
+            copy(igRoot, work, igRoot.relativize(f).toString().replace('\\', '/'));
+          }
+        }
+      }
+    }
 
     Path index = work.resolve("input/pagecontent/index.md");
     Files.createDirectories(index.getParent());

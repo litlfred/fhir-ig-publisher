@@ -71,4 +71,22 @@ class FmlSourceTest {
     assertTrue(Files.exists(tmp.resolve("work/input/maps/SM.fml")));
     assertTrue(Files.readString(a.igResource()).contains("\"input/maps\""), "path-resource kept");
   }
+
+  /** wv7r: Jekyll failed on the temporary IG because the template includes menu.xml, which SUSHI writes. */
+  @Test
+  void theTemporaryIgCarriesTheIncludesTheTemplateNeeds(@TempDir Path tmp) throws Exception {
+    Path ig = tmp.resolve("ig");
+    Files.createDirectories(ig.resolve("fsh-generated/resources"));
+    Files.createDirectories(ig.resolve("fsh-generated/includes"));
+    Files.createDirectories(ig.resolve("input/includes/sub"));
+    Files.writeString(ig.resolve("fsh-generated/includes/menu.xml"), "<ul/>");
+    Files.writeString(ig.resolve("input/includes/sub/note.md"), "x");
+    Files.writeString(ig.resolve("ig.ini"), "[IG]\nig = fsh-generated/resources/ImplementationGuide-x.json\n");
+    Files.writeString(ig.resolve("fsh-generated/resources/ImplementationGuide-x.json"),
+        "{\"resourceType\": \"ImplementationGuide\", \"id\": \"x\", \"definition\": {\"resource\": []}}");
+    Path work = tmp.resolve("work");
+    TempIgAssembler.assemble(ig, work, Set.of(), Map.of(), Set.of(), "ast.cache#0.0.0");
+    assertEquals("<ul/>", Files.readString(work.resolve("fsh-generated/includes/menu.xml")));
+    assertEquals("x", Files.readString(work.resolve("input/includes/sub/note.md")));
+  }
 }
