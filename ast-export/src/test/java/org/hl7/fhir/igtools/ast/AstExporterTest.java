@@ -185,6 +185,15 @@ class AstExporterTest {
   }
 
   @Test
+  void withoutTxTheBuildUsesThePublishersDefaultServer() {
+    AstPublisher p = new AstPublisher();
+    org.hl7.fhir.igtools.publisher.Publisher.setTxServerValue(new String[] {"-ig", "."}, p);
+    assertEquals(org.hl7.fhir.utilities.settings.FhirSettings.getTxFhirProduction(), p.getSettings().getTxServer());
+    org.hl7.fhir.igtools.publisher.Publisher.setTxServerValue(new String[] {"-ig", ".", "-tx", "n/a"}, p);
+    assertEquals("n/a", p.getSettings().getTxServer());
+  }
+
+  @Test
   void theDefaultAstOutResolvesARelativeIg() {
     Path cwd = Path.of("").toAbsolutePath().normalize();
     assertEquals(cwd.resolve("output-ast"), AstExportCli.defaultAstOut("."));

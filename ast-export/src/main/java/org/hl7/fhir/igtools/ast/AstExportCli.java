@@ -27,9 +27,11 @@ public class AstExportCli {
     AstPublisher p = new AstPublisher();
     p.setConfigFile(Publisher.getAbsoluteConfigFilePath(
         Publisher.determineActualIG(ig, PublisherUtils.IGBuildMode.MANUAL)));
-    if (param(args, "-tx") != null) {
-      p.getSettings().setTxServer(param(args, "-tx"));
-    }
+    // The Publisher's own rule, reused: -tx, else -devtx, else tx.fhir.org.
+    // Setting it only when -tx was given left the AST build with NO
+    // terminology server while a stock build used tx.fhir.org (bean qzex,
+    // 2026-10-23: 2261 differing output files).
+    Publisher.setTxServerValue(args, p);
     if (has(args, "-no-sushi")) {
       p.getSettings().setNoSushi(true);
     }
