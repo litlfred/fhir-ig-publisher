@@ -16,7 +16,7 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
 
 /**
  * {@code IncrementalBuildCli -ast <base> -ig <dir> -out <dir> [-head <rev> | -staged] [-work <dir>]
- * [-cache-folder <dir>] [-fsh-users <json>] [-max-rounds 3] [-threshold 0.4] [-tx <url>]}
+ * [-cache-folder <dir>] [-fsh-users <json>] [-max-rounds 3] [-threshold 0.4] [-tx <url>] [-verify-incremental]}
  *
  * <p>W7: import a base AST, plan the delta, rebuild only the cone, merge,
  * and repeat until the cone stops growing.
@@ -43,13 +43,31 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
  */
 public class IncrementalBuildCli {
 
+  /**
+   * Acts on the computed plan although {@link IncrementalPlan#INCREMENTAL_GUARD}
+   * is on, for the W7 verification runs ONLY (owner, 2026-10-23, option A).
+   * The guard itself stays on: without this flag every run is a full build.
+   */
+  static final String VERIFY_FLAG = "-verify-incremental";
+
+  static final String VERIFY_NOTE = "guard bypassed by " + VERIFY_FLAG
+      + ": this output is for W7 verification against a full build (W8), never a base";
+
+  /** Marks an AST built with {@link #VERIFY_FLAG}, so nothing takes it for a verified one. */
+  static void markUnverified(Path manifest) throws java.io.IOException {
+    JsonObject m = JsonParser.parseObject(Files.readString(manifest));
+    m.set("unverifiedIncremental", VERIFY_NOTE);
+    Files.writeString(manifest, JsonParser.compose(m, true));
+  }
+
   public static void main(String[] args) throws Exception {
     String astArg = AstExportCli.param(args, "-ast");
     String igArg = AstExportCli.param(args, "-ig");
     String outArg = AstExportCli.param(args, "-out");
     if (astArg == null || igArg == null || outArg == null) {
       System.err.println("usage: IncrementalBuildCli -ast <base> -ig <dir> -out <dir> [-head <rev> | -staged] "
-          + "[-work <dir>] [-cache-folder <dir>] [-fsh-users <json>] [-max-rounds 3] [-threshold 0.4] [-tx <url>]");
+          + "[-work <dir>] [-cache-folder <dir>] [-fsh-users <json>] [-max-rounds 3] [-threshold 0.4] [-tx <url>] "
+          + "[-verify-incremental]");
       System.exit(2);
     }
     Path baseAst = Path.of(astArg);
@@ -92,7 +110,12 @@ public class IncrementalBuildCli {
     if (untrusted != null) {
       IncrementalPlan.forceFull(plan, untrusted);
     }
-    IncrementalPlan.guard(plan);
+    boolean verify = AstExportCli.has(args, VERIFY_FLAG);
+    IncrementalPlan.guard(plan, !verify);
+    if (verify) {
+      plan.set("guard", VERIFY_NOTE);
+      System.out.println("WARNING: " + VERIFY_NOTE);
+    }
     Files.createDirectories(work);
     deleteTree(work.resolve("package-cache"));
     Files.writeString(work.resolve("plan.json"), JsonParser.compose(plan, true));
@@ -174,6 +197,9 @@ public class IncrementalBuildCli {
       newSources = Set.of();
       if (r.grew().isEmpty()) {
         copyTree(merged, out);
+        if (AstExportCli.has(args, VERIFY_FLAG)) {
+          markUnverified(out.resolve("manifest.json"));
+        }
         System.out.println("Converged after " + round + " round(s): " + r.resources() + " resources in " + out);
         return;
       }

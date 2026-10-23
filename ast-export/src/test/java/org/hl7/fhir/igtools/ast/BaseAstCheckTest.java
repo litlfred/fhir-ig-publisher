@@ -95,4 +95,18 @@ class BaseAstCheckTest {
     assertTrue(r.contains("2 input file(s) not at that revision, e.g. input/fsh/a.fsh"), r);
     assertNull(AstPublisher.notAtRevision(java.util.List.of()));
   }
+
+  /** Option A (owner, 2026-10-23): an AST built with -verify-incremental is never a base. */
+  @Test
+  void aVerificationRunsOutputIsNeverABase() throws Exception {
+    JsonObject m = manifest(rev, digest);
+    assertNull(BaseAstCheck.mismatch(ig, m));
+    Path mf = ig.resolve("manifest.json");
+    Files.writeString(mf, org.hl7.fhir.utilities.json.parser.JsonParser.compose(m, true));
+    IncrementalBuildCli.markUnverified(mf);
+    String r = BaseAstCheck.mismatch(ig, org.hl7.fhir.utilities.json.parser.JsonParser.parseObject(Files.readString(mf)));
+    assertNotNull(r);
+    assertTrue(r.contains("unverified incremental"), r);
+    assertTrue(IncrementalPlan.INCREMENTAL_GUARD, "the guard itself stays on");
+  }
 }

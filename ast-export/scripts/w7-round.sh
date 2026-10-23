@@ -61,9 +61,11 @@ for w in p["fullBuildBecause"]: print("  full because:", w)
 for f in p["files"]: print("  file:", f["path"], f["effect"], len(f["resources"]), f.get("reason", ""))
 PY
 
+# -verify-incremental acts on the plan although the guard is on; its output is
+# marked unverified and is never a base (owner, 2026-10-23, option A).
 echo "== incremental build"
 java -Xmx8g -cp "$CP" org.hl7.fhir.igtools.ast.IncrementalBuildCli -ast "$BASE" -ig "$IG" -out "$OUT/ast" \
-  -work "$OUT/work" -cache-folder "$OUT/pkg-cache" -threshold 0.99 2>&1 | tail -80
+  -work "$OUT/work" -cache-folder "$OUT/pkg-cache" -threshold 0.99 -verify-incremental 2>&1 | tail -80
 
 # W8: one ordinary full build of the same commit, from a clean tree, to diff
 # against the incremental AST. The incremental build above leaves files

@@ -30,6 +30,9 @@ public final class BaseAstCheck {
     if (inputs == null) {
       return "base AST records no inputs";
     }
+    if (manifest.has("unverifiedIncremental")) {
+      return "base AST is an unverified incremental build (" + manifest.asString("unverifiedIncremental") + ")";
+    }
     String rev = str(inputs, "sourceRevision");
     String digest = str(inputs, "inputDigest");
     if (rev == null) {
