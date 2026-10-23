@@ -324,15 +324,17 @@ def from_template_repo(name, version, dest):
     # Assemble beside dest, then rename into place.
     parent = os.path.dirname(os.path.abspath(dest))
     os.makedirs(parent, exist_ok=True)
+    # Keep the repository's own layout: the template's files at the top of the
+    # cache entry, and only package.json under package/. The Publisher reads a
+    # cached template with NpmPackage.fromFolder, which files a top-level file
+    # under "package/$root" and unpacks that folder into template/; a file put
+    # under package/ instead lands in template/package/, and the build then
+    # fails with "template/config.json not found".
     stage = tempfile.mkdtemp(prefix=".unpack-", dir=parent)
-    pkg = os.path.join(stage, "package")
-    os.makedirs(pkg)
     for e in os.listdir(tmp):
-        if e in (".git", "package"):
+        if e == ".git":
             continue
-        os.rename(os.path.join(tmp, e), os.path.join(pkg, e))
-    for e in os.listdir(os.path.join(tmp, "package")):
-        os.rename(os.path.join(tmp, "package", e), os.path.join(pkg, e))
+        os.rename(os.path.join(tmp, e), os.path.join(stage, e))
     os.rename(stage, dest)
     return {"templateRepo": f"https://github.com/{repo}", "repoFrom": via, "commit": commit,
             "headVersion": pj.get("version")}, None

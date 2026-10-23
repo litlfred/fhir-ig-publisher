@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Run the AST export on real IGs and print the W1/W2 measurements.
 #
-#   ast-export/scripts/run-real-igs.sh [work-dir] [--byte-identical]
+#   ast-export/scripts/run-real-igs.sh [work-dir] [--byte-identical] [--no-tx]
+#
+# --no-tx: for an environment without packages.fhir.org / tx.fhir.org (path B).
+# The package cache must already be seeded (seed-fhir-cache-from-npm.py exit 0);
+# both builds run with `-tx n/a`, and every number printed is labelled
+# "no terminology server".
 #
 # work-dir defaults to ../../ast-real-igs (beside this checkout). Needs network
 # to packages.fhir.org, packages2.fhir.org and tx.fhir.org, plus: JDK 17+,
@@ -11,16 +16,23 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="${1:-$HERE/../../ast-real-igs}"
-BYTE=0
-for a in "$@"; do [ "$a" = "--byte-identical" ] && BYTE=1; done
-[ "${1:-}" = "--byte-identical" ] && WORK="$HERE/../../ast-real-igs"
+BYTE=0; NOTX=0
+for a in "$@"; do
+  [ "$a" = "--byte-identical" ] && BYTE=1
+  [ "$a" = "--no-tx" ] && NOTX=1
+done
+case "${1:-}" in --*) WORK="$HERE/../../ast-real-igs";; esac
+TX=(); LABEL=""
+[ "$NOTX" = 1 ] && { TX=(-tx n/a); LABEL="  [no terminology server]"; }
 mkdir -p "$WORK"; WORK="$(cd "$WORK" && pwd)"
 
 need() { command -v "$1" >/dev/null || { echo "missing: $1 ($2)"; exit 1; }; }
 need java "JDK 17+"; need mvn "Maven"; need sushi "npm i -g fsh-sushi"
 need jekyll "gem install jekyll"; need git "git"; need python3 "python3"
-curl -s -o /dev/null -m 20 -w '%{http_code}' https://packages.fhir.org/hl7.fhir.uv.extensions.r5 | grep -qv '^000$' \
-  || { echo "packages.fhir.org unreachable: the build cannot fetch dependencies"; exit 1; }
+if [ "$NOTX" = 0 ]; then
+  curl -s -o /dev/null -m 20 -w '%{http_code}' https://packages.fhir.org/hl7.fhir.uv.extensions.r5 | grep -qv '^000$' \
+    || { echo "packages.fhir.org unreachable: seed the cache, then rerun with --no-tx"; exit 1; }
+fi
 
 echo "== unit tests"
 (cd "$HERE" && mvn -q test && mvn -q dependency:build-classpath -Dmdep.outputFile="$WORK/cp.txt")
@@ -30,11 +42,12 @@ run_ig() {
   local name="$1" dir="$WORK/$1"
   if [ -d "$dir/.git" ]; then git -C "$dir" pull -q; else git clone -q --depth 1 "https://github.com/WorldHealthOrganization/$name" "$dir"; fi
   echo "== $name: build + AST export (log: $WORK/$name.log)"
-  (cd "$dir" && java -Xmx8g -cp "$CP" org.hl7.fhir.igtools.ast.AstExportCli -ig . >"$WORK/$name.log" 2>&1) \
+  (cd "$dir" && java -Xmx8g -cp "$CP" org.hl7.fhir.igtools.ast.AstExportCli -ig . "${TX[@]}" >"$WORK/$name.log" 2>&1) \
     || { echo "build FAILED, see $WORK/$name.log"; tail -20 "$WORK/$name.log"; return 1; }
 }
 
 summarise() {
+  echo "  -- $1$LABEL"
   python3 - "$WORK/$1/output-ast" <<'PY'
 import json, sys, collections, os
 d = sys.argv[1]
@@ -67,9 +80,9 @@ for ig in smart-trust smart-immunizations; do
 done
 
 if [ "$BYTE" = 1 ]; then
-  echo "== byte-identical: stock Publisher vs AstExportCli on smart-trust"
+  echo "== byte-identical: stock Publisher vs AstExportCli on smart-trust$LABEL"
   ref="$WORK/smart-trust-stock"; rm -rf "$ref"; cp -r "$WORK/smart-trust" "$ref"; rm -rf "$ref/output" "$ref/output-ast" "$ref/temp"
-  (cd "$ref" && java -Xmx8g -cp "$CP" org.hl7.fhir.igtools.publisher.Publisher -ig . >"$WORK/smart-trust-stock.log" 2>&1)
+  (cd "$ref" && java -Xmx8g -cp "$CP" org.hl7.fhir.igtools.publisher.Publisher -ig . "${TX[@]}" >"$WORK/smart-trust-stock.log" 2>&1)
   n=$(diff -rq "$WORK/smart-trust/output" "$ref/output" | wc -l || true)
   echo "  files differing: $n  (list: diff -rq $WORK/smart-trust/output $ref/output)"
   echo "  build timestamps differ between ANY two runs; a finding is a difference that is not a timestamp."
