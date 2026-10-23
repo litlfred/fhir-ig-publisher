@@ -40,7 +40,13 @@ CP="$HERE/target/classes:$(cat "$WORK/cp.txt")"
 
 run_ig() {
   local name="$1" dir="$WORK/$1"
-  if [ -d "$dir/.git" ]; then git -C "$dir" pull -q; else git clone -q --depth 1 "https://github.com/WorldHealthOrganization/$name" "$dir"; fi
+  # A scratch clone: w7-round.sh leaves probe commits on it, so reset to upstream.
+  if [ -d "$dir/.git" ]; then git -C "$dir" fetch -q && git -C "$dir" reset -q --hard "@{u}"; else git clone -q --depth 1 "https://github.com/WorldHealthOrganization/$name" "$dir"; fi
+  # Build from a clean tree. A previous build leaves files under input/ that
+  # the IG does not ignore (the WHO template writes placeholder pages to
+  # input/pagecontent/), and a digest over them never verifies as a base
+  # (bean fpmn, 2026-10-23). This clone is the script's scratch copy.
+  git -C "$dir" clean -fdq -- input
   echo "== $name: build + AST export (log: $WORK/$name.log)"
   (cd "$dir" && java -Xmx8g -cp "$CP" org.hl7.fhir.igtools.ast.AstExportCli -ig . "${TX[@]}" >"$WORK/$name.log" 2>&1) \
     || { echo "build FAILED, see $WORK/$name.log"; tail -20 "$WORK/$name.log"; return 1; }

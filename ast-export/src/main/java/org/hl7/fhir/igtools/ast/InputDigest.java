@@ -149,6 +149,52 @@ public final class InputDigest {
     }
   }
 
+  /**
+   * The input paths whose work-tree state is not the committed revision:
+   * modified, added, deleted, or untracked and not ignored. {@code null} when
+   * {@code igRoot} is not in a git work tree or git cannot be run.
+   *
+   * <p>A digest taken over such a tree can never be recomputed from the
+   * revision, so a later plan cannot trust the AST as a base. The common
+   * cause is a previous build: a template's scripts may write files under
+   * {@code input/} that the IG does not ignore (fpmn, 2026-10-23: the WHO
+   * template's post-SUSHI step wrote 202 pages to {@code input/pagecontent/}).
+   */
+  public static List<String> notAtRevision(Path igRoot) {
+    try {
+      String inside = run(igRoot, "git", "rev-parse", "--is-inside-work-tree");
+      if (inside == null || !inside.trim().equals("true")) {
+        return null;
+      }
+      List<String> cmd = new ArrayList<>(List.of("git", "status", "--porcelain", "-z", "--untracked-files=all", "--"));
+      cmd.addAll(INPUTS);
+      String out = run(igRoot, cmd.toArray(new String[0]));
+      if (out == null) {
+        return null;
+      }
+      List<String> paths = new ArrayList<>();
+      String[] parts = out.split("\0");
+      for (int i = 0; i < parts.length; i++) {
+        String e = parts[i];
+        if (e.length() < 4) {
+          continue;
+        }
+        paths.add(e.substring(3));
+        // A rename or copy is followed by its source path.
+        if (e.charAt(0) == 'R' || e.charAt(0) == 'C') {
+          i++;
+        }
+      }
+      paths.sort(null);
+      return paths;
+    } catch (IOException e) {
+      return null;
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return null;
+    }
+  }
+
   /** stdout of a command run in {@code dir}, or {@code null} on a non-zero exit. */
   private static String run(Path dir, String... cmd) throws IOException, InterruptedException {
     Process p = new ProcessBuilder(cmd).directory(dir.toFile()).redirectErrorStream(false).start();

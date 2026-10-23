@@ -74,4 +74,25 @@ class BaseAstCheckTest {
   void anUnknownRevisionIsAReason() {
     assertNotNull(BaseAstCheck.mismatch(ig, manifest("0123456789abcdef0123456789abcdef01234567", digest)));
   }
+
+  /**
+   * fpmn, 2026-10-23: a previous build left untracked pages under input/, so
+   * the base recorded a digest no checkout of its revision has. The tree is
+   * reported when the AST is written, and the plan's reason names it.
+   */
+  @Test
+  void aBaseBuiltOverAPreviousBuildsLeftoversSaysSo() throws Exception {
+    assertEquals(java.util.List.of(), InputDigest.notAtRevision(ig));
+    Files.createDirectories(ig.resolve("input/pagecontent"));
+    Files.writeString(ig.resolve("input/pagecontent/ValueSet-X.md"), "placeholder");
+    Files.writeString(ig.resolve("input/fsh/a.fsh"), "edited");
+    assertEquals(java.util.List.of("input/fsh/a.fsh", "input/pagecontent/ValueSet-X.md"), InputDigest.notAtRevision(ig));
+    String dirtyDigest = InputDigest.of(ig);
+    JsonObject m = manifest(rev, dirtyDigest);
+    m.add("inputsNotAtRevision", AstPublisher.notAtRevision(InputDigest.notAtRevision(ig)));
+    String r = BaseAstCheck.mismatch(ig, m);
+    assertNotNull(r);
+    assertTrue(r.contains("2 input file(s) not at that revision, e.g. input/fsh/a.fsh"), r);
+    assertNull(AstPublisher.notAtRevision(java.util.List.of()));
+  }
 }

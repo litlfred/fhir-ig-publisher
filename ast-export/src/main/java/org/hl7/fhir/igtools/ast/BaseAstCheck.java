@@ -44,8 +44,17 @@ public final class BaseAstCheck {
     } catch (IOException e) {
       return "cannot recompute the input digest at " + rev + ": " + e.getMessage();
     }
-    return digest.equals(actual) ? null
-        : "base AST's inputDigest " + digest + " is not the input digest of " + rev + " (" + actual + ")";
+    if (digest.equals(actual)) {
+      return null;
+    }
+    String why = "base AST's inputDigest " + digest + " is not the input digest of " + rev + " (" + actual + ")";
+    JsonObject dirty = manifest.has("inputsNotAtRevision") && manifest.get("inputsNotAtRevision").isJsonObject()
+        ? manifest.getJsonObject("inputsNotAtRevision") : null;
+    if (dirty != null) {
+      why += "; it was built from a tree with " + dirty.asInteger("count") + " input file(s) not at that revision, e.g. "
+          + dirty.getJsonArray("sample").get(0).asString();
+    }
+    return why;
   }
 
   /** {@link InputDigest} of a clean checkout of {@code rev}. */

@@ -51,6 +51,25 @@ public class AstPublisher extends Publisher {
   public void recordInputs(String root) throws IOException {
     inputsBeforeBuild = inputs(root, null);
     digestModeBeforeBuild = digestMode(root);
+    notAtRevisionBeforeBuild = notAtRevision(InputDigest.notAtRevision(Path.of(root)));
+    if (notAtRevisionBeforeBuild != null) {
+      System.err.println("WARNING: " + notAtRevisionBeforeBuild.asInteger("count") + " input file(s) differ from "
+          + "the committed revision, e.g. " + notAtRevisionBeforeBuild.getJsonArray("sample").get(0).asString()
+          + ". This AST will not verify as a base for an incremental build. Build from a clean tree.");
+    }
+  }
+
+  /** What {@link #recordInputs} found not at the revision, or null when the tree was clean. */
+  private JsonObject notAtRevisionBeforeBuild;
+
+  /** {@code {count, sample}} for a non-empty list, else null. */
+  static JsonObject notAtRevision(java.util.List<String> paths) {
+    if (paths == null || paths.isEmpty()) {
+      return null;
+    }
+    org.hl7.fhir.utilities.json.model.JsonArray sample = new org.hl7.fhir.utilities.json.model.JsonArray();
+    paths.stream().limit(5).forEach(sample::add);
+    return new JsonObject().add("count", paths.size()).add("sample", sample);
   }
 
   JsonObject recordedInputs() {
@@ -62,7 +81,12 @@ public class AstPublisher extends Publisher {
     AstFieldsAccess fields = new AstFieldsAccess(this);
     String root = fields.rootDir();
     AstExporter exporter = new AstExporter(r -> composeJson(fields, r), Path.of(root));
-    exporter.export(getFileList(), outDir, header(fields, root, inputsBeforeBuild, digestModeBeforeBuild), upstreamEdges(fields));
+    JsonObject h = header(fields, root, inputsBeforeBuild, digestModeBeforeBuild);
+    // Beside inputs, never inside it (inputs is exactly CompiledInputsSchema).
+    if (notAtRevisionBeforeBuild != null) {
+      h.add("inputsNotAtRevision", notAtRevisionBeforeBuild);
+    }
+    exporter.export(getFileList(), outDir, h, upstreamEdges(fields));
     // SUSHI's own map from .fsh file to output resource, kept with the AST so
     // a later delta can be mapped even for a file that has since been deleted.
     Path fshIndex = Path.of(root, "fsh-generated", "data", "fsh-index.json");

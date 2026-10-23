@@ -33,7 +33,21 @@ git -C "$IG" clean -fdq
 # The base AST records the IG's commit; make the delta a real commit on top.
 if [ "$PROBE" = fml ]; then src=$(ls "$IG"/input/maps/*.fml | head -1); else src=$(ls "$IG"/input/cql/*.cql | head -1); fi
 echo "changing: ${src#$IG/}"
-printf '\n// ast-export W7 probe\n' >> "$src"
+if [ "$PROBE" = fml ]; then
+  # A comment compiles away, so the StructureMap would not change (fpmn,
+  # 2026-10-23). Rename the first rule instead: rule names are kept in
+  # StructureMap.group.rule.name.
+  python3 - "$src" <<'PY'
+import re, sys
+p = sys.argv[1]; s = open(p).read()
+t, n = re.subn(r'"([A-Za-z][A-Za-z0-9]*)";', r'"\1W7Probe";', s, count=1)
+if n != 1: sys.exit("no named rule to rename in " + p)
+open(p, "w").write(t)
+PY
+else
+  # The Library embeds the CQL source, so a comment is a real change.
+  printf '\n// ast-export W7 probe\n' >> "$src"
+fi
 git -C "$IG" commit -qam "W7 probe: one $PROBE file"
 
 echo "== plan"
@@ -50,3 +64,16 @@ PY
 echo "== incremental build"
 java -Xmx8g -cp "$CP" org.hl7.fhir.igtools.ast.IncrementalBuildCli -ast "$BASE" -ig "$IG" -out "$OUT/ast" \
   -work "$OUT/work" -cache-folder "$OUT/pkg-cache" -threshold 0.99 2>&1 | tail -80
+
+# W8: one ordinary full build of the same commit, from a clean tree, to diff
+# against the incremental AST. The incremental build above leaves files
+# under input/, so clean first (bean fpmn).
+echo "== W8 full build"
+W8="$WORK/w8-$PROBE"; mkdir -p "$W8"
+git -C "$IG" reset -q --hard HEAD
+git -C "$IG" clean -fdq
+git -C "$IG" rev-parse HEAD > "$W8/commit.txt"
+set +e
+(cd "$IG" && java -Xmx8g -cp "$CP" org.hl7.fhir.igtools.ast.AstExportCli -ig . -ast-out "$W8/ast" > "$W8.log" 2>&1)
+echo "w8 $PROBE exit $?"
+set -e
