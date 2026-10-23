@@ -59,17 +59,22 @@ src = collections.Counter(("fsh-generated/resources/" in (r.get("source") or "")
 print(f"  sources under fsh-generated/resources/: {src[True]} of {len(res)}  (IncrementalPlan assumes this for FSH)")
 LOGIC = {"Library", "PlanDefinition", "Measure", "ActivityDefinition"}
 typ = {r["key"]: r["resourceType"] for r in res}
-has = collections.defaultdict(bool)
+out, inc = set(), set()
 for e in deps:
     if e["origin"] == "ast-export" and e.get("resolved") and typ.get(e["resolved"]) in LOGIC:
-        has[e["source"]] = True
-print("  W2: logic resources with >=1 edge to another logic resource in this IG")
-tot = hit = 0
+        out.add(e["source"])
+        if typ.get(e["source"]) in LOGIC:
+            inc.add(e["resolved"])
+# A leaf library (concepts only) has incoming logic edges and none outgoing,
+# so criterion 2 counts a resource that has a logic edge in EITHER direction.
+print("  W2: logic resources with a logic-to-logic edge in this IG (out = outgoing only; any = in or out)")
+tot = hit = hout = 0
 for t in ("Library", "PlanDefinition", "Measure"):
     keys = [r["key"] for r in res if r["resourceType"] == t]
-    n = sum(1 for k in keys if has[k]); tot += len(keys); hit += n
-    print(f"    {t:15} {n:4} of {len(keys)}")
-print(f"    {'TOTAL':15} {hit:4} of {tot}   (smart-immunizations target: 458 of 458)")
+    n = sum(1 for k in keys if k in out or k in inc); o = sum(1 for k in keys if k in out)
+    tot += len(keys); hit += n; hout += o
+    print(f"    {t:15} any {n:4} of {len(keys)}   out {o:4}")
+print(f"    {'TOTAL':15} any {hit:4} of {tot}   out {hout:4}   (smart-immunizations target: 458 of 458)")
 unres = sum(1 for e in deps if not e.get("resolved"))
 print(f"  edges with target outside this IG (kept, resolved=null): {unres}")
 PY
