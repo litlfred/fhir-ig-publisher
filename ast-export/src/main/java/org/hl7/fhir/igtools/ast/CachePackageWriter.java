@@ -26,6 +26,14 @@ public final class CachePackageWriter {
   private CachePackageWriter() {
   }
 
+  /**
+   * The page the Publisher gives an IG's own resource by default. An IG that
+   * names its pages otherwise renders differently here; W8 would show it.
+   */
+  static String pagePath(String type, String id) {
+    return type + "-" + id + ".html";
+  }
+
   /** The package id used for the cached part of {@code igPackageId}. */
   public static String packageName(String igPackageId) {
     return igPackageId + ".ast-cache";
@@ -45,6 +53,7 @@ public final class CachePackageWriter {
     Files.createDirectories(pkg);
 
     JsonArray index = new JsonArray();
+    JsonObject paths = new JsonObject();
     for (JsonElement je : manifest.getJsonArray("resources")) {
       JsonObject r = je.asJsonObject();
       if (!keys.contains(r.asString("key"))) {
@@ -61,6 +70,9 @@ public final class CachePackageWriter {
       entry.add("id", id);
       copyIfPresent(r, entry, Map.of("canonical", "url", "version", "version"));
       index.add(entry);
+      if (r.has("canonical") && !r.get("canonical").isJsonNull()) {
+        paths.add(r.asString("canonical"), pagePath(type, id));
+      }
     }
     JsonObject idx = new JsonObject();
     idx.add("index-version", new org.hl7.fhir.utilities.json.model.JsonNumber("2"));
@@ -77,7 +89,23 @@ public final class CachePackageWriter {
     pj.add("description", "Cached part of an IG, written by ast-export for an incremental rebuild. "
         + "A cache, never an authority.");
     pj.add("dependencies", new JsonObject());
+    // Links to these resources must render as they do in a full build, where
+    // they are the IG's own pages: relative, "StructureMap-X.html". Without a
+    // spec.internals the Publisher links a package's resources to
+    // simplifier.net (bean w7r3, fml probe); with one, a page path is joined
+    // to the package's url, and an EMPTY url leaves it relative.
+    pj.add("url", "");
     Files.writeString(pkg.resolve("package.json"), JsonParser.compose(pj, true));
+    JsonObject spec = new JsonObject();
+    spec.add("webUrl", "");
+    spec.add("npm-name", name);
+    spec.add("ig-version", version);
+    spec.add("paths", paths);
+    spec.add("pages", new JsonObject());
+    spec.add("targets", new JsonArray());
+    spec.add("images", new JsonArray());
+    Files.createDirectories(pkg.resolve("other"));
+    Files.writeString(pkg.resolve("other/spec.internals"), JsonParser.compose(spec, true));
     return pkg.getParent();
   }
 

@@ -55,6 +55,16 @@ class IncrementalRebuildTest {
     JsonArray files = JsonParser.parseObject(Files.readString(pkg.resolve(".index.json"))).getJsonArray("files");
     assertEquals(2, files.size());
     assertEquals(X + "Library/A", files.get(0).asJsonObject().asString("url"));
+
+    // w7r3: a cached resource links as the IG's own page, relative, as in a full
+    // build, not to simplifier.net. This is what PublisherIGLoader.loadIGPackage does.
+    org.hl7.fhir.utilities.npm.NpmPackage npm = org.hl7.fhir.utilities.npm.NpmPackage.fromFolder(dir.toString());
+    assertTrue(npm.hasFile("other", "spec.internals"));
+    org.hl7.fhir.igtools.publisher.SpecMapManager smm = new org.hl7.fhir.igtools.publisher.SpecMapManager(
+        npm.load("other", "spec.internals").readAllBytes(), npm.vid(), npm.fhirVersion());
+    smm.setBase(X);
+    smm.setBase2(org.hl7.fhir.utilities.npm.PackageHacker.fixPackageUrl(npm.url()));
+    assertEquals("Library-A.html", smm.getPath(X + "Library/A", null, "Library", "A"));
   }
 
   @Test
