@@ -152,8 +152,8 @@ public class AstPublisher extends Publisher {
             if (r != null) {
               cached.add(r);
             }
-          } catch (Exception e) {
-            // not in the context: nothing to fix
+          } catch (Throwable e) {
+            // not in the context, or the context refuses (it throws Error): skip
           }
         }
         int n = relativiseCacheLinks(cached, cachePackage);
