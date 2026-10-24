@@ -57,6 +57,14 @@ public final class AstMerger {
   public static Result merge(Path baseDir, Path partialDir, Set<String> rebuild, Set<String> remove,
       String baseRevision, String headRevision, JsonObject headInputs, Path headFshIndex, Path outDir)
       throws IOException, FullBuildRequired {
+    return merge(baseDir, partialDir, rebuild, remove, baseRevision, headRevision, headInputs, headFshIndex, outDir,
+        Set.of());
+  }
+
+  /** As above; {@code compiledWith} are rebuilt libraries that did not change (IncrementalPlan#compiledWith). */
+  public static Result merge(Path baseDir, Path partialDir, Set<String> rebuild, Set<String> remove,
+      String baseRevision, String headRevision, JsonObject headInputs, Path headFshIndex, Path outDir,
+      Set<String> compiledWith) throws IOException, FullBuildRequired {
     JsonObject base = JsonParser.parseObject(Files.readString(baseDir.resolve("manifest.json")));
     JsonObject part = JsonParser.parseObject(Files.readString(partialDir.resolve("manifest.json")));
     Files.createDirectories(outDir);
@@ -138,7 +146,11 @@ public final class AstMerger {
     }
 
     // Fixed point: what the merged graph says depends on what was rebuilt.
-    Set<String> cone = new IncrementalPlan(outDir, null).forwardCone(rebuilt);
+    // Libraries rebuilt only so the Publisher compiles them did not change,
+    // so they seed no growth (IncrementalPlan#compiledWith).
+    Set<String> changed = new TreeSet<>(rebuilt);
+    changed.removeAll(compiledWith);
+    Set<String> cone = new IncrementalPlan(outDir, null).forwardCone(changed);
     cone.removeAll(rebuilt);
     cone.removeAll(rebuild);
     return new Result(list.size(), rebuilt, cone);

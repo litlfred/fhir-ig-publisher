@@ -84,6 +84,9 @@ public final class IncrementalPlan {
 
   private final List<Entry> entries = new ArrayList<>();
   private final Map<String, Set<String>> dependents = new HashMap<>();
+  /** artifact → its primary library (Measure.library, cqf-library). */
+  private final Map<String, Set<String>> primaryLibraries = new HashMap<>();
+  private int resolvedByName;
   private final Map<String, Set<String>> dependencies = new HashMap<>();
   /** fsh file (as SUSHI records it) → output file names. */
   private final Map<String, Set<String>> fshOutputs = new HashMap<>();
@@ -123,15 +126,33 @@ public final class IncrementalPlan {
       JsonObject o = je.asJsonObject();
       entries.add(new Entry(o.asString("key"), o.asString("resourceType"), str(o, "name"), str(o, "source")));
     }
+    Map<String, String> byTypeAndName = byTypeAndName(entries);
     Path deps = astDir.resolve("dependencies.json");
     if (Files.exists(deps)) {
       for (JsonElement je : JsonParser.parseObject(Files.readString(deps)).getJsonArray("dependencies")) {
         JsonObject o = je.asJsonObject();
         String to = str(o, "resolved");
+        if (to == null) {
+          // The Publisher resolves a CQL library by NAME (CqlSubSystem.getCqlInfo), so a
+          // relatedArtifact whose canonical base differs from the library's still binds
+          // to it. Without this the cone stops there and misses everything above it
+          // (bean w7r3: IMMZIND01Logic names .../immunizations/Library/IMMZIndicatorElements,
+          // whose url is .../immunizations-measles/...; 39 Measures lost their data
+          // requirements in the incremental build).
+          to = byTypeAndName.get(typeAndName(str(o, "target")));
+          if (to != null) {
+            resolvedByName++;
+          }
+        }
         if (to != null) {
           String from = o.asString("source");
           dependents.computeIfAbsent(to, k -> new TreeSet<>()).add(from);
           dependencies.computeIfAbsent(from, k -> new TreeSet<>()).add(to);
+          String kind = str(o, "kind");
+          String path = str(o, "path");
+          if ("library".equals(kind) || (path != null && path.contains("cqf-library"))) {
+            primaryLibraries.computeIfAbsent(from, k -> new TreeSet<>()).add(to);
+          }
         }
       }
     }
@@ -287,6 +308,55 @@ public final class IncrementalPlan {
     return closure(seeds, dependents);
   }
 
+  /**
+   * The primary libraries (Measure.library, cqf-library) of the artifacts in
+   * {@code cone} that are not in it. They are rebuilt WITH the cone but did not
+   * change, so they do not widen it: the Publisher infers an artifact's
+   * effective data requirements only from a library it compiles in the same
+   * run, and a Measure rebuilt without its library loses them (bean w7r3: 39
+   * Measures).
+   */
+  public Set<String> compiledWith(Set<String> cone) {
+    Set<String> libs = new TreeSet<>();
+    for (String k : cone) {
+      libs.addAll(primaryLibraries.getOrDefault(k, Set.of()));
+    }
+    libs.removeAll(cone);
+    return libs;
+  }
+
+  /** Edges whose canonical did not resolve, bound by resource type and name instead. */
+  int resolvedByName() {
+    return resolvedByName;
+  }
+
+  /** {@code Type/name} of a canonical without its version, or null. */
+  static String typeAndName(String canonical) {
+    if (canonical == null) {
+      return null;
+    }
+    String c = canonical.contains("|") ? canonical.substring(0, canonical.indexOf('|')) : canonical;
+    String[] parts = c.split("/");
+    return parts.length < 2 ? null : parts[parts.length - 2] + "/" + parts[parts.length - 1];
+  }
+
+  /** {@code Type/name} → key, for the names that are unique in the IG. */
+  private static Map<String, String> byTypeAndName(List<Entry> entries) {
+    Map<String, String> m = new HashMap<>();
+    Set<String> clash = new java.util.HashSet<>();
+    for (Entry e : entries) {
+      String tn = typeAndName(e.key());
+      if (tn == null || clash.contains(tn)) {
+        continue;
+      }
+      if (m.put(tn, e.key()) != null) {
+        m.remove(tn);
+        clash.add(tn);
+      }
+    }
+    return m;
+  }
+
   /** Everything {@code set} depends on, transitively, minus the set itself. */
   Set<String> toLoad(Set<String> set) {
     Set<String> all = closure(set, dependencies);
@@ -356,6 +426,9 @@ public final class IncrementalPlan {
     Set<String> cone = forwardCone(union(seeds, removed));
     Set<String> rebuild = new TreeSet<>(cone);
     rebuild.removeAll(removed);
+    Set<String> compiledWith = compiledWith(rebuild);
+    compiledWith.removeAll(removed);
+    rebuild.addAll(compiledWith);
     Set<String> load = toLoad(rebuild);
     load.removeAll(removed);
     int total = entries.size();
@@ -372,6 +445,10 @@ public final class IncrementalPlan {
     fullBecause.forEach(why::add);
     p.add("fullBuildBecause", why);
     p.add("resourcesInBase", total);
+    p.add("edgesResolvedByName", resolvedByName);
+    JsonArray cw = new JsonArray();
+    compiledWith.forEach(cw::add);
+    p.add("compiledWith", cw);
     p.add("coneFraction", new org.hl7.fhir.utilities.json.model.JsonNumber(String.format(java.util.Locale.ROOT, "%.3f", fraction)));
     p.add("seeds", arr(seeds));
     p.add("rebuild", arr(rebuild));

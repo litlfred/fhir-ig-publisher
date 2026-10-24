@@ -100,10 +100,14 @@ class IncrementalPlanTest {
   }
 
   @Test
-  void editingALeafRebuildsItAloneAndLoadsWhatItUses() throws Exception {
+  void editingALeafRebuildsItWithItsLibraryAndLoadsWhatItUses() throws Exception {
     JsonObject p = plan("M\tinput/fsh/logic/PD.fsh", Map.of(), 0.4);
-    assertEquals(List.of(PD), list(p, "rebuild"));
-    assertEquals(Set.of(A, B), Set.copyOf(list(p, "loadFromCache")), "its dependencies come from the cache");
+    // w7r3: the Publisher infers PD's data requirements only from a library it
+    // compiles in the same run, so PD's library A is rebuilt with it. A did not
+    // change, so its other dependent, M, is not.
+    assertEquals(Set.of(PD, A), Set.copyOf(list(p, "rebuild")));
+    assertEquals(List.of(A), list(p, "compiledWith"));
+    assertEquals(Set.of(B), Set.copyOf(list(p, "loadFromCache")), "its dependencies come from the cache");
   }
 
   @Test
@@ -158,6 +162,20 @@ class IncrementalPlanTest {
         headIndex("Library-B.json", "logic/B.fsh", "PlanDefinition-PD.json", "logic/PD.fsh"));
     assertEquals(List.of(A), list(p, "remove"));
     assertEquals(Set.of(PD, M), Set.copyOf(list(p, "rebuild")));
+    assertTrue(list(p, "compiledWith").isEmpty(), "a removed library is not rebuilt as a companion");
+  }
+
+  /**
+   * w7r3: a CQL relatedArtifact can name a library under another canonical base
+   * than the library's own url, and the Publisher still binds it by name. The
+   * plan does the same, or the cone stops at that edge.
+   */
+  @Test
+  void anUnresolvedLibraryEdgeBindsByNameWhenTheNameIsUnique() {
+    assertEquals("Library/IMMZIndicatorElements",
+        IncrementalPlan.typeAndName("http://smart.who.int/immunizations/Library/IMMZIndicatorElements"));
+    assertEquals("Library/X", IncrementalPlan.typeAndName("http://a/Library/X|1.0.0"));
+    assertEquals(null, IncrementalPlan.typeAndName(null));
   }
 
   @Test
@@ -221,7 +239,7 @@ class IncrementalPlanTest {
     assertEquals("full", p.asString("decision"));
     assertEquals("incremental", p.asString("computedDecision"));
     assertTrue(list(p, "fullBuildBecause").contains(IncrementalPlan.GUARD_REASON));
-    assertEquals(List.of(PD), list(p, "rebuild"), "the plan itself is still written");
+    assertEquals(Set.of(PD, A), Set.copyOf(list(p, "rebuild")), "the plan itself is still written");
   }
 
   @Test

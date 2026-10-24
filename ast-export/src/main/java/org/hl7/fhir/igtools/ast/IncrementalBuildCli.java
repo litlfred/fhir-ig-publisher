@@ -156,6 +156,10 @@ public class IncrementalBuildCli {
     Path currentBase = baseAst;
     for (int round = 1; round <= maxRounds; round++) {
       IncrementalPlan current = new IncrementalPlan(currentBase, null);
+      // Each artifact's primary library is compiled with it (IncrementalPlan#compiledWith).
+      Set<String> compiledWith = current.compiledWith(rebuild);
+      compiledWith.removeAll(remove);
+      rebuild = union(rebuild, compiledWith);
       Set<String> load = current.toLoad(rebuild);
       String version = "0.0.0-ast." + shortRev(baseRev) + ".r" + round;
       Path cache = cacheFolder != null ? Path.of(cacheFolder)
@@ -191,7 +195,7 @@ public class IncrementalBuildCli {
 
       Path merged = clean(work.resolve("merged-r" + round));
       AstMerger.Result r = AstMerger.merge(currentBase, partial, rebuild, remove, baseRev, headRev, headInputs,
-          ig.resolve(FSH_INDEX), merged);
+          ig.resolve(FSH_INDEX), merged, compiledWith);
       currentBase = merged;
       remove = Set.of();
       newSources = Set.of();
@@ -440,5 +444,11 @@ public class IncrementalBuildCli {
 
   static String orElse(String v, String d) {
     return v == null ? d : v;
+  }
+
+  private static Set<String> union(Set<String> a, Set<String> b) {
+    Set<String> u = new TreeSet<>(a);
+    u.addAll(b);
+    return u;
   }
 }
