@@ -199,6 +199,16 @@ public class AstPublisher extends Publisher {
     }
   }
 
+  private static void systemsOf(List<org.hl7.fhir.model.core.ValueSet.ValueSetExpansionContainsComponent> contains,
+      java.util.Set<String> into) {
+    for (org.hl7.fhir.model.core.ValueSet.ValueSetExpansionContainsComponent c : contains) {
+      if (c.hasSystem()) {
+        into.add(Provenance.key(c.getSystem(), c.getVersion()));
+      }
+      systemsOf(c.getContainsList(), into);
+    }
+  }
+
   /** Criterion 3 (W4), fragment level. A failure is written into pages.json and never fails the export. */
   void writePageProvenance(AstFieldsAccess fields, String root, Path outDir) throws IOException {
     JsonObject pages;
@@ -255,7 +265,11 @@ public class AstPublisher extends Publisher {
             }
           }
         }
-        exps.add(new Provenance.Expansion(vs.getUrl(), vs.getVersion(), params));
+        java.util.Set<String> systems = new java.util.TreeSet<>();
+        if (vs.hasExpansion()) {
+          systemsOf(vs.getExpansion().getContainsList(), systems);
+        }
+        exps.add(new Provenance.Expansion(vs.getUrl(), vs.getVersion(), params, new ArrayList<>(systems)));
       }
       h.add("terminology", Provenance.terminology(address, version, exps));
     } catch (Throwable t) {

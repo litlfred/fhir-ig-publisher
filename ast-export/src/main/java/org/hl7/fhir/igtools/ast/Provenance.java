@@ -30,7 +30,10 @@ public final class Provenance {
    * parameters (name → values). The expansion's timestamp is left out: it
    * changes every build and says nothing about what the expansion came from.
    */
-  public record Expansion(String url, String version, Map<String, List<String>> parameters) {
+  public record Expansion(String url, String version, Map<String, List<String>> parameters, List<String> codeSystems) {
+    public Expansion(String url, String version, Map<String, List<String>> parameters) {
+      this(url, version, parameters, List.of());
+    }
   }
 
   /** The parameters that say what an expansion was built from. Others (count, offset...) say how it was asked for. */
@@ -44,10 +47,13 @@ public final class Provenance {
   public static JsonArray packages(Collection<Pkg> loaded, String excludeId) {
     Map<String, Pkg> byKey = new TreeMap<>();
     for (Pkg p : loaded) {
-      if (p == null || p.id() == null || p.id().equals(excludeId)) {
+      if (p == null || p.id() == null || unscoped(p.id()).equals(unscoped(excludeId))) {
         continue;
       }
-      byKey.putIfAbsent(p.id() + "#" + p.version(), p);
+      List<String> deps = p.dependencies() == null ? List.of()
+          : p.dependencies().stream().map(Provenance::unscoped).toList();
+      Pkg q = new Pkg(unscoped(p.id()), p.version(), p.canonical(), p.fhirVersion(), deps);
+      byKey.putIfAbsent(q.id() + "#" + q.version(), q);
     }
     JsonArray a = new JsonArray();
     for (Pkg p : byKey.values()) {
@@ -103,6 +109,14 @@ public final class Provenance {
       }
     }
     o.add("builtFrom", from);
+    // The code systems its codes are drawn from, as the expansion lists them.
+    // Most local expansions carry no used-codesystem parameter (bean w3r1:
+    // 190 of 192 on smart-immunizations), so this is the provenance they have.
+    JsonArray cs = new JsonArray();
+    if (e.codeSystems() != null) {
+      e.codeSystems().stream().distinct().sorted().forEach(cs::add);
+    }
+    o.add("codeSystems", cs);
     return o;
   }
 
@@ -131,6 +145,18 @@ public final class Provenance {
     byKey.values().forEach(a::add);
     t.add("expansions", a);
     return t;
+  }
+
+  /**
+   * The package id without an npm scope: the same core package reads
+   * {@code @hl7/hl7.fhir.r4.core} from one cache and {@code hl7.fhir.r4.core}
+   * from another (bean w3r1).
+   */
+  static String unscoped(String id) {
+    if (id != null && id.startsWith("@") && id.indexOf('/') > 0) {
+      return id.substring(id.indexOf('/') + 1);
+    }
+    return id;
   }
 
   static String key(String url, String version) {

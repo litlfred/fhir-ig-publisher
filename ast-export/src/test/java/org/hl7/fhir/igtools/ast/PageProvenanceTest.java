@@ -33,6 +33,7 @@ class PageProvenanceTest {
     Path libPage = write(temp.resolve("Library-A.html"), "---\n---\n{% include Library-A-summary.xhtml %}");
     write(temp.resolve("overview.md"), "Intro {% include Library-A-summary.xhtml %} and {% include {{[type]}}-x.xhtml %}");
     Path src = write(root.resolve("input/cql/A.cql"), "library A");
+    Files.write(temp.resolve("latin1.html"), new byte[] {(byte) 0xE9, ' ', '{', '%', ' ', 'i', 'n', 'c', 'l', 'u', 'd', 'e', ' ', 'L', 'i', 'b', 'r', 'a', 'r', 'y', '-', 'A', '-', 'i', 'n', 'n', 'e', 'r', '.', 'x', 'h', 't', 'm', 'l', ' ', '%', '}'});
 
     JsonObject o = PageProvenance.build(root, temp, List.of(new PageProvenance.Source(src.toString(),
         List.of("http://x/Library/A|1.0"), List.of(summary.toString(), inner.toString(), libPage.toString(),
@@ -49,6 +50,7 @@ class PageProvenanceTest {
     assertEquals(2, overview.getJsonArray("fragments").size());
     assertEquals(1, o.asInteger("unresolvedIncludes"), "a variable include is counted, not guessed");
     assertFalse(pages.has("x.html"), "outputs outside the temp folder are not pages");
+    assertEquals(1, pages.getJsonObject("latin1.html").getJsonArray("fragments").size(), "a page that is not UTF-8 is still read");
   }
 
   @Test

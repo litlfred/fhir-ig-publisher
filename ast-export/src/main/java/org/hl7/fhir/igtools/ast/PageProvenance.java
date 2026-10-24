@@ -85,7 +85,8 @@ public final class PageProvenance {
             continue;
           }
           Set<String> inc = new TreeSet<>();
-          unresolved += includesOf(Files.readString(p, java.nio.charset.StandardCharsets.UTF_8), inc);
+          // Byte for byte: include tags are ASCII, and some pages are not UTF-8 (bean w3r1).
+          unresolved += includesOf(new String(Files.readAllBytes(p), java.nio.charset.StandardCharsets.ISO_8859_1), inc);
           direct.put(isInclude ? "_includes/" + includes.relativize(p).toString().replace('\\', '/') : r, inc);
           if (!isInclude) {
             page.computeIfAbsent(r, k -> new JsonObject());

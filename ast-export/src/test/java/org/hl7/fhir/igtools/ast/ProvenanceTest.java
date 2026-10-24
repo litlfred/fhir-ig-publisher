@@ -18,11 +18,11 @@ class ProvenanceTest {
   void theClosureIsPinnedSortedAndWithoutTheCachePackage() {
     JsonArray a = Provenance.packages(List.of(
         new Provenance.Pkg("hl7.fhir.uv.cpg", "2.0.0", "http://hl7.org/fhir/uv/cpg", "4.0.1", List.of("hl7.fhir.uv.cql#2.0.0", "hl7.fhir.r4.core#4.0.1")),
-        new Provenance.Pkg("hl7.fhir.r4.core", "4.0.1", "http://hl7.org/fhir", "4.0.1", List.of()),
+        new Provenance.Pkg("@hl7/hl7.fhir.r4.core", "4.0.1", "http://hl7.org/fhir", "4.0.1", List.of()),
         new Provenance.Pkg("hl7.fhir.r4.core", "4.0.1", "http://hl7.org/fhir", "4.0.1", List.of()),
         new Provenance.Pkg("my.ig.ast-cache", "0.0.0-ast.abc.r1", "http://x", "4.0.1", List.of())),
         "my.ig.ast-cache");
-    assertEquals(2, a.size(), "one entry per id#version, cache package left out");
+    assertEquals(2, a.size(), "one entry per id#version, npm scope dropped, cache package left out");
     JsonObject first = a.get(0).asJsonObject();
     assertEquals("hl7.fhir.r4.core", first.asString("id"));
     assertEquals("4.0.1", first.asString("version"));
@@ -36,7 +36,8 @@ class ProvenanceTest {
         new Provenance.Expansion("http://x/ValueSet/b", "1.0", Map.of(
             "used-codesystem", List.of("http://snomed.info/sct|http://snomed.info/sct/900000000000207008/version/20240201"),
             "count", List.of("1000"))),
-        new Provenance.Expansion("http://x/ValueSet/a", null, Map.of())));
+        new Provenance.Expansion("http://x/ValueSet/a", null, Map.of(), List.of("http://loinc.org|2.77", "http://x/CodeSystem/c|1.0", "http://loinc.org|2.77"))));
+    assertEquals(2, t.getJsonArray("expansions").get(0).asJsonObject().getJsonArray("codeSystems").size(), "distinct code systems from contains");
     assertEquals("http://tx.fhir.org/r4", t.getJsonObject("server").asString("address"));
     assertEquals("1.9.0", t.getJsonObject("server").asString("version"));
     JsonArray e = t.getJsonArray("expansions");
