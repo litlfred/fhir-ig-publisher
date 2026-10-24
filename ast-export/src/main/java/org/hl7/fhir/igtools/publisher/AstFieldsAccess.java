@@ -35,4 +35,14 @@ public final class AstFieldsAccess {
   public IWorkerContext context() {
     return pf.context;
   }
+
+  /** Every package the build loaded, the IG's dependencies and theirs (W3). */
+  public java.util.List<org.hl7.fhir.utilities.npm.NpmPackage> loadedPackages() {
+    return java.util.Collections.unmodifiableList(pf.npmList);
+  }
+
+  /** The expansions the build made, as it saves them to expansions.json (W3). */
+  public java.util.List<org.hl7.fhir.model.core.ValueSet> expansions() {
+    return java.util.Collections.unmodifiableList(pf.expansions);
+  }
 }

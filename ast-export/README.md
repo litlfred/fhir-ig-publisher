@@ -304,10 +304,27 @@ mvn -q dependency:build-classpath -Dmdep.outputFile=cp.txt
 java -cp "target/classes:$(cat cp.txt)" org.hl7.fhir.igtools.ast.AstExportCli -ig /path/to/ig [-ast-out dir] [-tx url] [-no-sushi]
 ```
 
+## Package closure and terminology provenance (W3)
+
+The manifest carries two more objects, both read from what the build left in
+memory:
+
+- `packages`: every package the build loaded, one entry per `id#version`,
+  sorted, with its `canonical`, `fhirVersion` and pinned `dependencies`. An
+  incremental round leaves out its own cache package.
+- `terminology`: the `server` the build was connected to (`address`,
+  `version`), and one entry per expanded ValueSet with `builtFrom`, its
+  expansion parameters that name sources (`used-codesystem`, `used-valueset`,
+  `version`, and so on). The expansion timestamp is left out, because it would
+  make every build differ. An expansion may have been answered from the local
+  terminology cache, and the Publisher does not record whether it was.
+
+If either cannot be read, the manifest says why in `packagesUnknown` or
+`terminologyUnknown`, and the export goes on. An incremental merge takes head's
+`packages`, and keeps the base's expansions except where head made its own.
+
 ## Not yet
 
-W2's exit criterion, all 458 logic artefacts of smart-immunizations carrying
-their edges, has not been measured on a real build yet. The package registry
-was unreachable from the environment this was written in. W7 end-to-end run. W8: diff a full build against the incremental AST, and the
-threshold. W3: pinned dependency closure and terminology provenance. W4:
-page-fragment provenance.
+W2, W7 and W8 are measured on smart-immunizations (beans qzex and w7r6). W3 is
+built and unit-tested, but not yet run on a real build. W4, page-fragment
+provenance, is waiting on the owner's choice of depth.

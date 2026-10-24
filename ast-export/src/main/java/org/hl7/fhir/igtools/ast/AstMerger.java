@@ -133,6 +133,19 @@ public final class AstMerger {
     if (headInputs != null) {
       m.add("inputs", headInputs);
     }
+    // W3: the head build loaded the packages (the cache package is left out
+    // when it is exported); the base's expansions stand where head made none.
+    if (part.has("packages")) {
+      m.add("packages", part.get("packages"));
+    } else if (base.has("packages")) {
+      m.add("packages", base.get("packages"));
+    }
+    JsonObject term = Provenance.mergeTerminology(
+        base.has("terminology") ? base.getJsonObject("terminology") : null,
+        part.has("terminology") ? part.getJsonObject("terminology") : null);
+    if (term != null) {
+      m.add("terminology", term);
+    }
     m.add("resources", list);
     Files.writeString(outDir.resolve("manifest.json"), JsonParser.compose(m, true));
     // Review of PR #8, M5: the merged AST describes HEAD, so it carries head's

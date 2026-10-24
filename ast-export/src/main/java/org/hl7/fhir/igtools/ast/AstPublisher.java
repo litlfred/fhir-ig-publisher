@@ -187,6 +187,7 @@ public class AstPublisher extends Publisher {
     if (notAtRevisionBeforeBuild != null) {
       h.add("inputsNotAtRevision", notAtRevisionBeforeBuild);
     }
+    addProvenance(h, fields, cachePackage);
     exporter.export(getFileList(), outDir, h, upstreamEdges(fields));
     // SUSHI's own map from .fsh file to output resource, kept with the AST so
     // a later delta can be mapped even for a file that has since been deleted.
@@ -194,6 +195,51 @@ public class AstPublisher extends Publisher {
     if (java.nio.file.Files.exists(fshIndex)) {
       java.nio.file.Files.copy(fshIndex, outDir.resolve("fsh-index.json"),
           java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+  }
+
+  /**
+   * Criteria 4 and 5 (W3): the pinned package closure and the terminology
+   * provenance. A failure here is reported in the manifest and never fails
+   * the export.
+   */
+  static void addProvenance(JsonObject h, AstFieldsAccess fields, String excludePackage) {
+    try {
+      List<Provenance.Pkg> pkgs = new ArrayList<>();
+      for (org.hl7.fhir.utilities.npm.NpmPackage p : fields.loadedPackages()) {
+        pkgs.add(new Provenance.Pkg(p.name(), p.version(), p.canonical(), p.fhirVersion(), p.dependencies()));
+      }
+      h.add("packages", Provenance.packages(pkgs, excludePackage));
+    } catch (Throwable t) {
+      h.add("packagesUnknown", String.valueOf(t));
+    }
+    try {
+      String address = null;
+      String version = null;
+      try {
+        org.hl7.fhir.services.client.ITerminologyClientN c = fields.context().getTerminologyClientManager().getMasterClient();
+        if (c != null) {
+          address = c.getAddress();
+          version = c.getServerVersion();
+        }
+      } catch (Throwable t) {
+        // no server (offline build): the server object stays empty
+      }
+      List<Provenance.Expansion> exps = new ArrayList<>();
+      for (org.hl7.fhir.model.core.ValueSet vs : fields.expansions()) {
+        Map<String, List<String>> params = new java.util.TreeMap<>();
+        if (vs.hasExpansion()) {
+          for (org.hl7.fhir.model.core.ValueSet.ValueSetExpansionParameterComponent p : vs.getExpansion().getParameterList()) {
+            if (p.hasValue() && p.getValue().primitiveValue() != null) {
+              params.computeIfAbsent(p.getName(), k -> new ArrayList<>()).add(p.getValue().primitiveValue());
+            }
+          }
+        }
+        exps.add(new Provenance.Expansion(vs.getUrl(), vs.getVersion(), params));
+      }
+      h.add("terminology", Provenance.terminology(address, version, exps));
+    } catch (Throwable t) {
+      h.add("terminologyUnknown", String.valueOf(t));
     }
   }
 
