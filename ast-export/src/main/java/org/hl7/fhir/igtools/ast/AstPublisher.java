@@ -76,6 +76,88 @@ public class AstPublisher extends Publisher {
     return inputsBeforeBuild;
   }
 
+  /** The cache package of an incremental round, or null in an ordinary build. */
+  private String cachePackage;
+  /** Its {@code package/} folder, and canonical → file name from its index. */
+  private Path cacheDir;
+  private final java.util.Map<String, String> cacheFiles = new java.util.HashMap<>();
+
+  /**
+   * Names the cache package whose resources stand in for the IG's own
+   * (IncrementalBuildCli), and the folder it was written to.
+   */
+  public void setCachePackage(String name, Path packageFolder) throws IOException {
+    this.cachePackage = name;
+    this.cacheDir = packageFolder.resolve("package");
+    org.hl7.fhir.utilities.json.model.JsonObject idx = org.hl7.fhir.utilities.json.parser.JsonParser.parseObject(
+        java.nio.file.Files.readString(cacheDir.resolve(".index.json")));
+    for (org.hl7.fhir.utilities.json.model.JsonElement je : idx.getJsonArray("files")) {
+      org.hl7.fhir.utilities.json.model.JsonObject f = je.asJsonObject();
+      if (f.has("url")) {
+        cacheFiles.put(f.asString("url"), f.asString("filename"));
+      }
+    }
+  }
+
+  /**
+   * A cached resource resolves WITH its content, as the IG's own resources do
+   * in a full build. The Publisher finds a dependency package's resource
+   * through the package's spec map, which gives the link but loads content only
+   * for examples, so the renderer had no name to show and printed the canonical
+   * (bean w7r4: the library links in 41 Measure narratives).
+   */
+  @Override
+  public org.hl7.fhir.services.renderers.utils.Resolver.ResourceWithReference resolve(
+      org.hl7.fhir.services.renderers.utils.RenderingContext context, String url, String version) throws IOException {
+    org.hl7.fhir.services.renderers.utils.Resolver.ResourceWithReference r = super.resolve(context, url, version);
+    if (r == null || r.getResource() != null || cacheDir == null || url == null) {
+      return r;
+    }
+    String file = cacheFiles.get(url.contains("|") ? url.substring(0, url.indexOf('|')) : url);
+    if (file == null) {
+      return r;
+    }
+    try (java.io.InputStream in = java.nio.file.Files.newInputStream(cacheDir.resolve(file))) {
+      org.hl7.fhir.services.elementmodel.Element e =
+          new org.hl7.fhir.services.elementmodel.JsonParser(new AstFieldsAccess(this).context()).parseSingle(in, null);
+      return new org.hl7.fhir.services.renderers.utils.Resolver.ResourceWithReference(r.getKind(), r.getUrlReference(),
+          r.getWebPath(), org.hl7.fhir.services.renderers.utils.ResourceWrapper.forResource(context, e));
+    } catch (Exception ex) {
+      return r;
+    }
+  }
+
+  /**
+   * After the dependencies are loaded and before anything is rendered, the
+   * cached resources link as the IG's own pages do. The Publisher gives a
+   * package resource the path {@code <package web location>/<page>}; the cache
+   * package's location is empty, so that is {@code /ValueSet-X.html}, a link to
+   * the server root, where a full build writes {@code ValueSet-X.html} (bean
+   * w7r4: 41 Measure and 2 StructureMap narratives).
+   */
+  @Override
+  public void checkDependencies(org.hl7.fhir.igtools.publisher.FetchedFile igf, org.hl7.fhir.utilities.IniFile buildTracker)
+      throws Exception {
+    super.checkDependencies(igf, buildTracker);
+    if (cachePackage != null) {
+      int n = relativiseCacheLinks(new AstFieldsAccess(this).context().fetchResourcesByType(Resource.class), cachePackage);
+      System.out.println("ast-export: " + n + " cached resource link(s) made relative");
+    }
+  }
+
+  /** Drops the leading "/" from the web path of each resource from {@code pkg}; returns how many. */
+  static int relativiseCacheLinks(List<? extends Resource> resources, String pkg) {
+    int n = 0;
+    for (Resource r : resources) {
+      if (r.hasSourcePackage() && pkg.equals(r.getSourcePackage().getId()) && r.hasWebPath()
+          && r.getWebPath().startsWith("/")) {
+        r.setWebPath(r.getWebPath().substring(1));
+        n++;
+      }
+    }
+    return n;
+  }
+
   /** Writes the AST for the run that just completed. */
   public void exportAst(Path outDir) throws IOException {
     AstFieldsAccess fields = new AstFieldsAccess(this);

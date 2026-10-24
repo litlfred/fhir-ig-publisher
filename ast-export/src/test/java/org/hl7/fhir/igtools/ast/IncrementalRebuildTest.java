@@ -348,4 +348,18 @@ class IncrementalRebuildTest {
     assertEquals(java.util.List.of("-ig", "/ig", "-ast-out", "/out"),
         java.util.List.of(IncrementalBuildCli.fullBuildArgs(ig, out, null)));
   }
+
+  /** w7r4: a cached resource's page path loses the "/" an empty package location gives it; others keep theirs. */
+  @Test
+  void cachedResourcesLinkRelativeLikeTheIgsOwn() {
+    org.hl7.fhir.model.core.ValueSet cached = new org.hl7.fhir.model.core.ValueSet();
+    cached.setSourcePackage(new org.hl7.fhir.model.core.PackageInformation("x.ig.ast-cache", "0.0.0-ast.abc.r1", new java.util.Date()));
+    cached.setWebPath("/ValueSet-V.html");
+    org.hl7.fhir.model.core.ValueSet other = new org.hl7.fhir.model.core.ValueSet();
+    other.setSourcePackage(new org.hl7.fhir.model.core.PackageInformation("hl7.fhir.uv.extensions", "5.2.0", new java.util.Date()));
+    other.setWebPath("/ValueSet-W.html");
+    assertEquals(1, AstPublisher.relativiseCacheLinks(java.util.List.of(cached, other), "x.ig.ast-cache"));
+    assertEquals("ValueSet-V.html", cached.getWebPath());
+    assertEquals("/ValueSet-W.html", other.getWebPath());
+  }
 }

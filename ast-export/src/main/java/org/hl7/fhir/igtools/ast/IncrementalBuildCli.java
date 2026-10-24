@@ -165,7 +165,8 @@ public class IncrementalBuildCli {
       Path cache = cacheFolder != null ? Path.of(cacheFolder)
           : scratchCache(work, Path.of(System.getProperty("user.home"), ".fhir", "packages"));
       String name = CachePackageWriter.packageName(packageId);
-      CachePackageWriter.write(currentBase, allExcept(currentBase, rebuild, remove), cache, name, version, fhirVersion);
+      Path cachePkg = CachePackageWriter.write(currentBase, allExcept(currentBase, rebuild, remove), cache, name, version,
+          fhirVersion);
 
       Map<String, String> sources = sources(currentBase);
       Set<String> libraries = libraryNames(currentBase, rebuild);
@@ -182,6 +183,7 @@ public class IncrementalBuildCli {
       AstPublisher p = new AstPublisher();
       p.setConfigFile(Publisher.getAbsoluteConfigFilePath(
           Publisher.determineActualIG(roundDir.toString(), PublisherUtils.IGBuildMode.MANUAL)));
+      p.setCachePackage(name, cachePkg);
       p.getSettings().setNoSushi(true);
       p.getSettings().setCacheOption(PublisherUtils.CacheOption.LEAVE);
       p.getSettings().setPackageCacheFolder(cache.toString());
