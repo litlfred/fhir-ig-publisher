@@ -243,10 +243,10 @@ class IncrementalPlanTest {
   }
 
   @Test
-  void theGuardIsOn() throws Exception {
-    // Lifted only by the owner, after review: see IncrementalPlan.INCREMENTAL_GUARD.
-    assertTrue(IncrementalPlan.INCREMENTAL_GUARD);
-    assertEquals("full", IncrementalPlan.guard(plan("M\tinput/fsh/logic/PD.fsh", Map.of(), 0.4)).asString("decision"));
+  void theGuardIsOff() throws Exception {
+    // Lifted by the owner on 2026-10-24 (option A, bean w7r6): see IncrementalPlan.INCREMENTAL_GUARD.
+    assertFalse(IncrementalPlan.INCREMENTAL_GUARD);
+    assertEquals("incremental", IncrementalPlan.guard(plan("M\tinput/fsh/logic/PD.fsh", Map.of(), 0.4)).asString("decision"));
   }
 
   // M1: a key is removed only when head no longer defines it.

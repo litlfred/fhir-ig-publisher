@@ -52,12 +52,14 @@ public final class IncrementalPlan {
    * those fixes and their regression tests are in AND the W7 loop has been
    * run end to end against a real Publisher and diffed against a full build
    * (W8). Lifting it is a separate, reviewed change by the owner: set this to
-   * {@code false} and update {@code IncrementalPlanTest#theGuardIsOn}.
+   * {@code false} and update {@code IncrementalPlanTest#theGuardIsOff}.
    *
-   * <p>With the guard on, W1/W2 ({@code AstExporter}, {@code LogicEdges},
-   * {@code InputDigest}) can merge: nothing acts on an incremental decision.
+   * <p><b>Lifted 2026-10-24</b> by the owner (option A), after W7 round 6
+   * (bean w7r6) converged on smart-immunizations for a CQL and an FML probe and
+   * the W8 diff against a full build showed only noise (dates and temp-file
+   * names). A plan that cannot tell still decides {@code full}.
    */
-  public static final boolean INCREMENTAL_GUARD = true;
+  public static final boolean INCREMENTAL_GUARD = false;
 
   /** Why the guard forces a full build. */
   public static final String GUARD_REASON = "incremental path not yet verified";

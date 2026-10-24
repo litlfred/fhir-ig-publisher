@@ -64,30 +64,24 @@ when the target is elsewhere, such as another package's FHIRHelpers. Unlike
 upstream, such an edge is **kept**. A dependency on another package is still
 a dependency, and dropping it makes a rebuild cone look smaller than it is.
 
-## The incremental guard: every decision is `full` for now
+## The incremental guard: lifted 2026-10-24
 
 The code review of this PR (2026-10-02) found ways the incremental path could
-drop a resource or keep a stale one. Until those are fixed **and** W7 has been
-run against a real Publisher and diffed against a full build,
-`IncrementalPlan.INCREMENTAL_GUARD` is on, and it is applied in one place,
-`IncrementalPlan.guard`, by both CLIs:
+drop a resource or keep a stale one, so `IncrementalPlan.INCREMENTAL_GUARD`
+forced every decision to `full` until those were fixed **and** W7 had been run
+against a real Publisher and diffed against a full build (W8).
 
-- `AstPlanCli` still computes and writes the whole plan, but its `decision` is
-  `full`, with `"incremental path not yet verified"` in `fullBuildBecause`. The
-  decision it would have made is kept as `computedDecision`, for review.
-- `IncrementalBuildCli` therefore always runs one ordinary build. The plan is
-  still written to `<work>/plan.json`.
+Both are done. The review's blockers and majors (B1-B3, M1-M6) are fixed, each
+with a regression test. W7 round 6 (bean w7r6) converged in one round on
+smart-immunizations for a CQL probe and an FML probe. The W8 diff of each
+against a full build of the same revision shows only the noise two full builds
+show: `*.date`, the `liquid-<uuid>` temp-file names, and the rendered build
+time. The owner lifted the guard on 2026-10-24 (option A).
 
-So W1 and W2 (`AstExporter`, `LogicEdges`, `InputDigest`) can merge safely:
-nothing acts on an incremental decision. The owner lifts the guard in a
-separate change, after review.
-
-**What lifting it needs.** The review's blockers and majors on the
-incremental path (B1-B3, M1-M6) are fixed on this branch, each with a
-regression test. That is necessary, not sufficient: the W7 loop has still
-never run against a real Publisher. Lift it once one real incremental round
-has been run and its AST diffed against a full build of the same revision
-(W8) with every difference explained.
+The guard is still applied in one place, `IncrementalPlan.guard`, and now
+passes the computed plan through. A plan that cannot tell still decides `full`.
+`-verify-incremental` is accepted and ignored. An AST it marked
+`unverifiedIncremental` is still refused as a base.
 
 ## Incremental plan (W5, W6)
 
@@ -134,8 +128,7 @@ Before any file is classified, three things force `full`, with the reason:
    - a new `.cql` file is a full build.
 
    Dependents of removed resources are rebuilt.
-4. **Decision.** `incremental`, or `full` with `fullBuildBecause`. **While the
-   guard is on, the written decision is always `full`** (see above). A cone
+4. **Decision.** `incremental`, or `full` with `fullBuildBecause`. A cone
    above `-threshold` of the IG (default 40%) is a full build, because a full
    build costs about the same and is simpler.
 
@@ -143,10 +136,9 @@ Before any file is classified, three things force `full`, with the reason:
 and a rebuilt resource can gain edges the base did not have. W7 must
 recompute the cone after rebuilding and repeat until it stops growing.
 
-## Incremental rebuild (W7), UNTESTED END TO END, and GUARDED
+## Incremental rebuild (W7)
 
-While the guard is on, step 1 always decides `full` and steps 2 to 7 do not
-run.
+Verified end to end on smart-immunizations (W7 round 6, W8). See the guard section above.
 
 `IncrementalBuildCli -ast <base> -ig <dir> -out <dir> [-head <rev> | -staged] [-work <dir>] [-cache-folder <dir>] [-fsh-users <json>]`
 

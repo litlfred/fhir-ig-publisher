@@ -16,9 +16,9 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
  * <p>{@code -head-fsh-index} is SUSHI's index after running at head. Without
  * it, a deleted {@code .fsh} file is a full build.
  *
- * <p>While {@link IncrementalPlan#INCREMENTAL_GUARD} is on, the written
- * {@code decision} is always {@code full}; the computed one is kept as
- * {@code computedDecision}.
+ * <p>{@link IncrementalPlan#INCREMENTAL_GUARD} is off since 2026-10-24, so the
+ * written {@code decision} is the computed one. Were it on, the decision would
+ * be {@code full} and the computed one kept as {@code computedDecision}.
  */
 public class AstPlanCli {
 

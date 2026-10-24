@@ -107,6 +107,5 @@ class BaseAstCheckTest {
     String r = BaseAstCheck.mismatch(ig, org.hl7.fhir.utilities.json.parser.JsonParser.parseObject(Files.readString(mf)));
     assertNotNull(r);
     assertTrue(r.contains("unverified incremental"), r);
-    assertTrue(IncrementalPlan.INCREMENTAL_GUARD, "the guard itself stays on");
   }
 }

@@ -34,19 +34,17 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
  *       resources that were not rebuilt, rebuild those and merge again.</li>
  * </ol>
  *
- * <p><b>Guarded.</b> While {@link IncrementalPlan#INCREMENTAL_GUARD} is on,
- * every run takes the full-build branch; the plan is still written to
- * {@code <work>/plan.json} for review.
- *
- * <p><b>UNTESTED end to end</b> (2026-09-30): the package registry was
- * unreachable when it was written. Each piece is unit-tested alone.
+ * <p>The plan is written to {@code <work>/plan.json}. The incremental guard
+ * was lifted on 2026-10-24 (owner, option A) after W7 and W8 passed on
+ * smart-immunizations (bean w7r6).
  */
 public class IncrementalBuildCli {
 
   /**
-   * Acts on the computed plan although {@link IncrementalPlan#INCREMENTAL_GUARD}
-   * is on, for the W7 verification runs ONLY (owner, 2026-10-23, option A).
-   * The guard itself stays on: without this flag every run is a full build.
+   * Acted on the computed plan while {@link IncrementalPlan#INCREMENTAL_GUARD}
+   * was on, for the W7 verification runs (owner, 2026-10-23). The guard is
+   * off now, so the flag is accepted and ignored. ASTs it marked stay refused
+   * as a base by {@link BaseAstCheck}.
    */
   static final String VERIFY_FLAG = "-verify-incremental";
 
@@ -110,12 +108,10 @@ public class IncrementalBuildCli {
     if (untrusted != null) {
       IncrementalPlan.forceFull(plan, untrusted);
     }
-    boolean verify = AstExportCli.has(args, VERIFY_FLAG);
-    IncrementalPlan.guard(plan, !verify);
-    if (verify) {
-      plan.set("guard", VERIFY_NOTE);
-      System.out.println("WARNING: " + VERIFY_NOTE);
+    if (AstExportCli.has(args, VERIFY_FLAG)) {
+      System.out.println("note: " + VERIFY_FLAG + " is no longer needed: the incremental guard is off");
     }
+    IncrementalPlan.guard(plan);
     Files.createDirectories(work);
     deleteTree(work.resolve("package-cache"));
     Files.writeString(work.resolve("plan.json"), JsonParser.compose(plan, true));
@@ -203,9 +199,6 @@ public class IncrementalBuildCli {
       newSources = Set.of();
       if (r.grew().isEmpty()) {
         copyTree(merged, out);
-        if (AstExportCli.has(args, VERIFY_FLAG)) {
-          markUnverified(out.resolve("manifest.json"));
-        }
         System.out.println("Converged after " + round + " round(s): " + r.resources() + " resources in " + out);
         return;
       }

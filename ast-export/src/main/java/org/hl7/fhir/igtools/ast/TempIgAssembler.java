@@ -23,9 +23,8 @@ import org.hl7.fhir.utilities.json.parser.JsonParser;
  * gains the cache package, and {@code definition.page} is cut to one stub,
  * because an incremental build produces an AST, not a site.
  *
- * <p><b>UNTESTED against a real Publisher run</b> (2026-09-30): the package
- * registry was unreachable when this was written. The risks are named in the
- * README.
+ * <p>Run against a real Publisher on smart-immunizations in W7 rounds 2-6
+ * (2026-10-23/24). The risks are named in the README.
  */
 public final class TempIgAssembler {
 
