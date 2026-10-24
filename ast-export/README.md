@@ -323,8 +323,28 @@ If either cannot be read, the manifest says why in `packagesUnknown` or
 `terminologyUnknown`, and the export goes on. An incremental merge takes head's
 `packages`, and keeps the base's expansions except where head made its own.
 
+## Page-fragment provenance (W4), fragment level
+
+`pages.json`, beside the manifest, records which source produced which page
+fragment, and which page includes which fragment (owner, 2026-10-24, option A):
+
+- `fragments`: each file the Publisher wrote under `temp/pages/_includes/`,
+  with the `source` file and the `resources` it came from. This is the
+  Publisher's own record: everything it writes for a source goes into that
+  source's `FetchedFile.getOutputNames()`.
+- `pages`: each `.html` or `.md` page in the temp folder, with its `source`
+  when one wrote it, and the `fragments` it includes. They are found from the
+  literal `{% include X %}` tags, followed through fragments that include
+  fragments.
+- `unresolvedIncludes`: the number of includes built from a variable, which a
+  scan cannot resolve. They are counted, not guessed.
+
+Element-level provenance, meaning which source element produced which piece
+of HTML, would need a fork of the core renderers. It is out of scope. An
+incremental merge replaces a rebuilt source's fragments and pages with the
+round's own, and keeps everything else from the base.
+
 ## Not yet
 
-W2, W7 and W8 are measured on smart-immunizations (beans qzex and w7r6). W3 is
-built and unit-tested, but not yet run on a real build. W4, page-fragment
-provenance, is waiting on the owner's choice of depth.
+W2, W7 and W8 are measured on smart-immunizations (beans qzex and w7r6). W3 and W4 are
+built and unit-tested, but not yet run on a real build (bean w3r1).

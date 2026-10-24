@@ -189,6 +189,7 @@ public class AstPublisher extends Publisher {
     }
     addProvenance(h, fields, cachePackage);
     exporter.export(getFileList(), outDir, h, upstreamEdges(fields));
+    writePageProvenance(fields, root, outDir);
     // SUSHI's own map from .fsh file to output resource, kept with the AST so
     // a later delta can be mapped even for a file that has since been deleted.
     Path fshIndex = Path.of(root, "fsh-generated", "data", "fsh-index.json");
@@ -196,6 +197,25 @@ public class AstPublisher extends Publisher {
       java.nio.file.Files.copy(fshIndex, outDir.resolve("fsh-index.json"),
           java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
+  }
+
+  /** Criterion 3 (W4), fragment level. A failure is written into pages.json and never fails the export. */
+  void writePageProvenance(AstFieldsAccess fields, String root, Path outDir) throws IOException {
+    JsonObject pages;
+    try {
+      List<PageProvenance.Source> sources = new ArrayList<>();
+      for (FetchedFile f : getFileList()) {
+        List<String> keys = new ArrayList<>();
+        for (FetchedResource r : f.getResources()) {
+          keys.add(keyFor(r));
+        }
+        sources.add(new PageProvenance.Source(f.getPath(), keys, new ArrayList<>(f.getOutputNames())));
+      }
+      pages = PageProvenance.build(Path.of(root), Path.of(fields.tempDir()), sources);
+    } catch (Throwable t) {
+      pages = new JsonObject().add("$schema", PageProvenance.SCHEMA).add("unknown", String.valueOf(t));
+    }
+    PageProvenance.write(pages, outDir);
   }
 
   /**

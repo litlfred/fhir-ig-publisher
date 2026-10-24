@@ -148,6 +148,10 @@ public final class AstMerger {
     }
     m.add("resources", list);
     Files.writeString(outDir.resolve("manifest.json"), JsonParser.compose(m, true));
+    JsonObject pages = PageProvenance.merge(PageProvenance.read(baseDir), PageProvenance.read(partialDir));
+    if (pages != null) {
+      PageProvenance.write(pages, outDir);
+    }
     // Review of PR #8, M5: the merged AST describes HEAD, so it carries head's
     // fsh-index, read after SUSHI ran. Without one, it carries none: the base's
     // index would map the next delta through files that may have moved.

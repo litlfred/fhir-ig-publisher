@@ -23,6 +23,11 @@ public final class AstFieldsAccess {
     return pf.rootDir;
   }
 
+  /** Where the Publisher writes the site's pages and {@code _includes/} fragments before Jekyll (W4). */
+  public String tempDir() {
+    return pf.tempDir;
+  }
+
   public String outputDir() {
     return pf.outputDir;
   }
