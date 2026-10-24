@@ -140,8 +140,27 @@ public class AstPublisher extends Publisher {
       throws Exception {
     super.checkDependencies(igf, buildTracker);
     if (cachePackage != null) {
-      int n = relativiseCacheLinks(new AstFieldsAccess(this).context().fetchResourcesByType(Resource.class), cachePackage);
-      System.out.println("ast-export: " + n + " cached resource link(s) made relative");
+      // One fetch per cached canonical: the context refuses to list some types
+      // (fetchResourcesByType(ValueSet) throws "not allow Iterating ValueSet
+      // resources", bean w7r5). A rendering detail never fails the build.
+      try {
+        org.hl7.fhir.services.context.IWorkerContext ctx = new AstFieldsAccess(this).context();
+        List<Resource> cached = new ArrayList<>();
+        for (String url : cacheFiles.keySet()) {
+          try {
+            Resource r = ctx.fetchResource(Resource.class, url);
+            if (r != null) {
+              cached.add(r);
+            }
+          } catch (Exception e) {
+            // not in the context: nothing to fix
+          }
+        }
+        int n = relativiseCacheLinks(cached, cachePackage);
+        System.out.println("ast-export: " + n + " cached resource link(s) made relative");
+      } catch (Throwable t) {
+        System.out.println("ast-export: WARNING: cached links not made relative: " + t);
+      }
     }
   }
 
