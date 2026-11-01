@@ -334,7 +334,10 @@ def from_template_repo(name, version, dest):
     for e in os.listdir(tmp):
         if e == ".git":
             continue
-        os.rename(os.path.join(tmp, e), os.path.join(stage, e))
+        # WORK is under the system temp dir and the cache usually is not: a
+        # runner keeps them on different filesystems, where rename fails
+        # (EXDEV). Copy across; the final rename below stays atomic.
+        shutil.move(os.path.join(tmp, e), os.path.join(stage, e))
     os.rename(stage, dest)
     return {"templateRepo": f"https://github.com/{repo}", "repoFrom": via, "commit": commit,
             "headVersion": pj.get("version")}, None
