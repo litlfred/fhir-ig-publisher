@@ -70,7 +70,8 @@ class AstExporterTest {
     assertEquals("Patient/p1", entries.get(0).key());
     assertEquals("http://x/Library/LibA|0.2.0", entries.get(1).key());
     assertTrue(Files.exists(out.resolve(entries.get(1).file())));
-    assertEquals("resources/Library/" + AstExporter.fileName("LibA", "http://x/Library/LibA|0.2.0"), entries.get(1).file());
+    // Named by id alone: the path does not change when the version does.
+    assertEquals("resources/Library/LibA.json", entries.get(1).file());
     assertEquals("{\"id\":\"p1\"}", Files.readString(out.resolve(entries.get(0).file())));
 
     JsonObject m = JsonParser.parseObject(Files.readString(out.resolve("manifest.json")));
@@ -81,6 +82,38 @@ class AstExporterTest {
     JsonObject lib = m.getJsonArray("resources").get(1).asJsonObject();
     assertEquals("input/fsh/lib.fsh", lib.asString("source"));
     assertTrue(m.getJsonArray("resources").get(0).asJsonObject().get("canonical").isJsonNull());
+  }
+
+  @Test
+  void aFileIsNamedByIdAndKeepsItsPathAcrossAVersionBump(@TempDir Path out) throws Exception {
+    AstExporter exporter = new AstExporter(r -> ("{\"id\":\"" + r.getId() + "\"}").getBytes(StandardCharsets.UTF_8));
+    List<AstExporter.Entry> v2 = exporter.export(
+        List.of(file("a.fsh", resource("Library", "LibA", "http://x/Library/LibA", "0.2.0"))),
+        out.resolve("v2"), new JsonObject());
+    List<AstExporter.Entry> v3 = exporter.export(
+        List.of(file("a.fsh", resource("Library", "LibA", "http://x/Library/LibA", "0.3.0"))),
+        out.resolve("v3"), new JsonObject());
+    assertEquals("resources/Library/LibA.json", v2.get(0).file());
+    assertEquals(v2.get(0).file(), v3.get(0).file());
+  }
+
+  @Test
+  void resourcesThatShareATypeAndIdEachCarryTheirKeysHash(@TempDir Path out) throws Exception {
+    AstExporter exporter = new AstExporter(r -> ("{\"id\":\"" + r.getId() + "\"}").getBytes(StandardCharsets.UTF_8));
+    List<AstExporter.Entry> e = exporter.export(List.of(
+        file("a.fsh",
+            resource("Library", "LibA", "http://x/Library/LibA", "0.2.0"),
+            resource("Library", "LibA", "http://x/Library/LibA", "0.3.0"),
+            // Differs only in case: one file on a case-insensitive disk.
+            resource("Library", "liba", "http://x/Library/liba", "0.2.0"),
+            resource("Library", "LibB", "http://x/Library/LibB", "0.2.0"))),
+        out, new JsonObject());
+    List<String> names = e.stream().map(AstExporter.Entry::file).toList();
+    assertEquals(4, new java.util.HashSet<>(names).size());
+    assertTrue(names.contains("resources/Library/LibB.json"));
+    assertTrue(names.contains("resources/Library/" + AstExporter.fileName("LibA", "http://x/Library/LibA|0.3.0", true)));
+    assertTrue(names.contains("resources/Library/" + AstExporter.fileName("liba", "http://x/Library/liba|0.2.0", true)));
+    for (String n : names) assertTrue(Files.exists(out.resolve(n)), n);
   }
 
   @Test

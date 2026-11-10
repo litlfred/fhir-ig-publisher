@@ -83,9 +83,15 @@ public class AstExporter {
       throws IOException {
     List<Entry> entries = new ArrayList<>();
     List<EdgeRow> edges = new ArrayList<>(upstreamEdges);
+    java.util.Map<String, Integer> slots = new java.util.HashMap<>();
     for (FetchedFile f : files) {
       for (FetchedResource r : f.getResources()) {
-        Entry entry = write(f, r, outDir);
+        slots.merge(slotOf(r.fhirType(), r.getId()), 1, Integer::sum);
+      }
+    }
+    for (FetchedFile f : files) {
+      for (FetchedResource r : f.getResources()) {
+        Entry entry = write(f, r, outDir, slots.get(slotOf(r.fhirType(), r.getId())) > 1);
         entries.add(entry);
         for (LogicEdges.Edge e : LogicEdges.of(entry.resourceType(), r.getElement())) {
           edges.add(new EdgeRow(entry.key(), e.kind(), e.target(), e.targetVersion(), e.path(), "ast-export"));
@@ -173,7 +179,7 @@ public class AstExporter {
     Files.writeString(outDir.resolve("dependencies.json"), JsonParser.compose(doc, true));
   }
 
-  private Entry write(FetchedFile f, FetchedResource r, Path outDir) throws IOException {
+  private Entry write(FetchedFile f, FetchedResource r, Path outDir, boolean shared) throws IOException {
     String type = r.fhirType();
     String id = r.getId();
     Element e = r.getElement();
@@ -181,18 +187,35 @@ public class AstExporter {
     String version = childValue(e, "version");
     String name = childValue(e, "name");
     String key = keyOf(type, id, canonical, version);
-    // The file name carries a hash of the KEY: two versions (or canonicals) of
-    // one Type/id are two resources and must be two files (Copilot review on
-    // folio-assistant#1708).
-    String rel = "resources/" + safe(type) + "/" + fileName(id, key);
+    // Two versions (or canonicals) of one Type/id are two resources and must
+    // be two files (Copilot review on folio-assistant#1708): only those carry
+    // a hash of the key. Every other file is named by its id alone, so its
+    // path survives a version bump and git stores the next AST's copy as a
+    // delta of this one (fhir-harness#325, owner 2026-11-10).
+    String rel = "resources/" + safe(type) + "/" + fileName(id, key, shared);
     Path target = outDir.resolve(rel);
     Files.createDirectories(target.getParent());
     Files.write(target, composer.compose(r));
     return new Entry(key, canonical, version, type, id, name, rel, sourceOf(f, root));
   }
 
-  /** {@code <id>--<first 8 hex of sha256(key)>.json}. */
-  static String fileName(String id, String key) {
+  /**
+   * The slot two resources would share a file in: the same type and id, as
+   * written, without case, so two ids that differ only in case never collide
+   * on a case-insensitive file system.
+   */
+  static String slotOf(String type, String id) {
+    return (safe(type) + "/" + safe(id)).toLowerCase(java.util.Locale.ROOT);
+  }
+
+  /**
+   * {@code <id>.json}, or {@code <id>--<first 8 hex of sha256(key)>.json}
+   * when another resource in the export has the same {@link #slotOf slot}.
+   */
+  static String fileName(String id, String key, boolean shared) {
+    if (!shared) {
+      return safe(id) + ".json";
+    }
     try {
       byte[] d = java.security.MessageDigest.getInstance("SHA-256")
           .digest(key.getBytes(java.nio.charset.StandardCharsets.UTF_8));
